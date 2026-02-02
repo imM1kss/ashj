@@ -6,6 +6,8 @@ import random as rand
 from dotenv import load_dotenv
 import os
 
+load_dotenv()
+
 #open data.json
 with open("data.json", 'r', encoding="utf-8") as file:
     data = json.load(file)
@@ -91,6 +93,9 @@ def next_keyboard():
     # 2-я строка
     keyboard.add_callback_button("Информ.", color=VkKeyboardColor.PRIMARY, payload={'cmd':'pe'})
     keyboard.add_callback_button("История", color=VkKeyboardColor.PRIMARY, payload={'cmd':'eng'})
+
+    keyboard.add_callback_button("Химия", color=VkKeyboardColor.PRIMARY, payload={'cmd':'chm'})
+    keyboard.add_callback_button("Биология", color=VkKeyboardColor.PRIMARY, payload={'cmd':'bio'})
 
     keyboard.add_line()
     keyboard.add_callback_button("<---", color=VkKeyboardColor.POSITIVE, payload={'cmd':'back'})   
