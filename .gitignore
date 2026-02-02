@@ -18,4 +18,6 @@ __pycache__/
 *.log
 *.sqlite3
 
+*.docx
+
 data.json
