@@ -1,12 +1,9 @@
 from aiogram.filters import CommandStart
-from aiogram.filters.callback_data import CallbackData
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 from aiogram import F
 from aiogram.types import CallbackQuery
 
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from bot.utils import kb_generator, inline_generator
-from config import dp, bot, router
+from tg.bot.utils import inline_generator
+from tg.config import router
 from aiogram.types import Message
 
 @router.message(CommandStart())

@@ -1,26 +1,14 @@
-from tkinter.font import names
-
-from aiogram.filters import CommandStart, ADMINISTRATOR
-from aiogram.filters.callback_data import CallbackData
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 from aiogram import F
 from aiogram.types import CallbackQuery
-from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+
+from tg import config
+from tg.bot.utils import inline_generator
+from tg.config import router, db
 from aiogram.types import Message
 
-
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
-import config
-from bot.utils import kb_generator, inline_generator
-from config import dp, bot, router, db
-from aiogram.types import Message
-
-from db.FCM import Subject
+from tg.db.FCM import Subject
 
 
 @router.message(Command('admin'))

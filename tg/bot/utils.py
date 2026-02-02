@@ -1,11 +1,5 @@
-from calendar import firstweekday
-from unittest import findTestCases
-
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
-import config
 
 
 def kb_generator(buttons:list, user_telegram_id: int):
