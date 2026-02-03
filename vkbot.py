@@ -221,6 +221,11 @@ def run_bot():
                             if users[usid]["act"] == "add":
                                 write_hw(users[usid]['subject'], msg.get('text', '').lower(), extract_photos(msg))
                                 send_message(peer_id, 'Домашнее задание успешно добавлено', None)
+                            elif users[usid]["act"] == "edit":
+                                send_message(PEER_ID, "Эта функция недоступна, попробуйте позже")
+                            elif users[usid]["act"] == "remove":
+                                write_hw(users[usid]['subject'], "", [])
+                                send_message(peer_id, 'Домашнее задание успешно удалено', None)
                             users[usid]["act"] = None
                             vk_api.messages.delete(
                                 peer_id = peer_id,
@@ -271,9 +276,9 @@ def run_bot():
                         users[event.object.user_id]["act"] = "add"
                         edit_message(event, "Выберите предмет:", main_keyboard())
                     elif cmd == "edit":
-                        pass
+                        users[event.object.user_id]["act"] = "edit"
                     elif cmd == "remove":
-                        pass
+                        users[event.object.user_id]["act"] = "remove"
                     else:
                         users[event.object.user_id]['subject'] = cmd
                         users[event.object.user_id]['msid'] = event.object.conversation_message_id
