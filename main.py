@@ -4,7 +4,7 @@ while True:
         import time
         import json
 
-        from parser import run_parser, get_next_day
+        from parser import run_parser, get_next_day, upload_data
         from vkbot import run_bot, send_message
 
 
