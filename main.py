@@ -4,13 +4,15 @@ while True:
         import time
         import json
 
-        from parser import run_parser, get_next_day, upload_data
+        from parser import run_parser, get_next_day
         from vkbot import run_bot, send_message
+
+        with open('data.json', 'r', encoding='utf-8') as file:
+            data = json.load(file)
 
 
         def get_hw(schedule):
-            with open('data.json', 'r', encoding="utf-8") as file:
-                data = json.load(file)
+            global data
 
             text = "\n\nДомашнее задание:"
             attachments = []
@@ -58,7 +60,6 @@ while True:
 
                 if res:
                     text = f"РАСПИСАНИЕ на {ndd}:"
-
                     for el in res:
                         text += "\n"
                         for i in el:

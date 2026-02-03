@@ -23,7 +23,9 @@ def run_parser():
             if download_file(download_link, ndf):
                 file_name = f"{ndf}.docx"
                 schedule = get_schedule(file_name)
+                print(ndd)
                 upload_data(data, "last_date", ndd)
+                upload_data(data, "last_schedule", schedule)
     print(schedule)
     return schedule
 
@@ -116,7 +118,10 @@ def remove_all_schedule():
         os.remove(file_path)
 
 def upload_data(data, tag, value):
+    print(f"Update {tag} to {value}")
+    print(data[tag])
     data[tag] = value
+    print(data[tag])
     with open("data.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 

@@ -32,6 +32,51 @@ vk_session = VkApi(token = TOKEN)
 vk_api = vk_session.get_api()
 longpoll = VkBotLongPoll(vk_session, GROUP_ID)
 
+def get_hw(schedule):
+    text = "\n\nДомашнее задание:"
+    attachments = []
+
+    name2id = {
+        "математика": "math",
+        "физика": "phys",
+        "информатика": "infm",
+        "история": "hist",
+        "география": "geo",
+        "обществознание": "obsh",
+        "русский язык": "rus",
+        "литература": "lit",
+        "физическая культура": "pe",
+        "английский язык": "eng",
+        "химия": "chm",
+        "биология": "bio"
+    }
+
+    for row in schedule:
+        subj_name = row[1].lower()
+        print(subj_name)
+        subj_id = name2id.get(subj_name)
+        print(subj_id)
+
+        if not subj_id:
+            continue
+
+        hw = data["home_work"][subj_id]
+
+        print(hw)
+
+        if hw["text"]:
+            text += f"\n{subj_name.capitalize()} — {hw['text']}"
+            print(text)
+        else:
+            text += f"\n{subj_name.capitalize()} — нет данных"
+            print(text)
+
+        # добавляем фото
+        if hw["src"]:
+            attachments.extend(hw["src"])
+
+    return text, attachments
+
 def send_message(id = PEER_ID, msg = "Void", keyboard = None, attachment=None):
     vk_api.messages.send(
         peer_id = id,
@@ -70,6 +115,8 @@ def menu_keyboard():
     
     keyboard.add_callback_button('Расписание', color=VkKeyboardColor.SECONDARY, payload={'cmd':'schedule'})
     keyboard.add_callback_button('ДЗ', color=VkKeyboardColor.SECONDARY, payload={'cmd':'home_work'})
+
+    keyboard.add_line()
 
     keyboard.add_callback_button('Закрыть', color=VkKeyboardColor.NEGATIVE, payload={'cmd':'close'})
 
@@ -111,7 +158,7 @@ def next_keyboard():
 
     # 2-я строка
     keyboard.add_callback_button("Информ.", color=VkKeyboardColor.PRIMARY, payload={'cmd':'pe'})
-    keyboard.add_callback_button("История", color=VkKeyboardColor.PRIMARY, payload={'cmd':'eng'})
+    keyboard.add_callback_button("Английский", color=VkKeyboardColor.PRIMARY, payload={'cmd':'eng'})
 
     keyboard.add_callback_button("Химия", color=VkKeyboardColor.PRIMARY, payload={'cmd':'chm'})
     keyboard.add_callback_button("Биология", color=VkKeyboardColor.PRIMARY, payload={'cmd':'bio'})
@@ -154,32 +201,35 @@ def extract_photos(msg):
     return photos
 
 def run_bot():
-    global users
+    global users, data
     #listen events
     for event in longpoll.listen():
             #event message
             if event.type == VkBotEventType.MESSAGE_NEW:
                 msg = event.object['message']
                 peer_id = msg['peer_id']
+                usid = msg["from_id"]
                 #get events only in our group
                 if peer_id == PEER_ID:
                     #message handler
-                    if msg.get('text', '').lower() in ['/bot', '/start'] and msg['from_id'] not in users:
-                        send_message(PEER_ID, "Выберите предмет", main_keyboard())
-                        users[msg['from_id']] = {"subject":None, "msid":None, "src":[]}
+                    if msg.get('text', '').lower() in ['/bot', '/start'] and usid not in users:
+                        send_message(PEER_ID, "Выберите предмет", menu_keyboard())
+                        users[usid] = {"subject":None, "msid":None, "src":[], "act":None}
                         print(users)
                     elif msg['from_id'] in users:
-                        if users[msg['from_id']]['subject'] != None:
-                            write_hw(users[msg['from_id']]['subject'], msg.get('text', '').lower(), extract_photos(msg))
-                            send_message(peer_id, 'Домашнее задание успешно добавлено', None)
+                        if users[usid]['subject'] != None:
+                            if users[usid]["act"] == "add":
+                                write_hw(users[usid]['subject'], msg.get('text', '').lower(), extract_photos(msg))
+                                send_message(peer_id, 'Домашнее задание успешно добавлено', None)
+                            users[usid]["act"] = None
                             vk_api.messages.delete(
                                 peer_id = peer_id,
-                                conversation_message_ids=[users[msg['from_id']]['msid']],
+                                conversation_message_ids=[users[usid]['msid']],
                                 delete_for_all = True
                             )
-                            users.pop(msg['from_id'])
+                            users.pop(usid)
                             print(users)
-                    elif msg.get('text', '').lower() == "/setid" and msg['from_id'] == data["admin_id"]:
+                    elif msg.get('text', '').lower() == "/setid" and usid == data["admin_id"]:
                         send_message(PEER_ID, "ID успешно установлен")
             #event callback
             elif event.type == VkBotEventType.MESSAGE_EVENT:
@@ -199,7 +249,31 @@ def run_bot():
                         edit_message(event, text, main_keyboard())
                     elif cmd == 'menu':
                         text = "Выберите предмет:"
-                        edit_message(event, text, main_keyboard())
+                        edit_message(event, text, menu_keyboard())
+                    elif cmd == "schedule":
+                        text = "Расписание:"
+                        for row in data['last_schedule']:
+                            text += "\n"
+                            for el in row:
+                                text += f"{el} "
+                        edit_message(event, text, None)
+                        users.pop(event.object.user_id)
+                    elif cmd == "home_work":
+                        with open("data.json", 'r', encoding='utf-8') as file:
+                            data = json.load(file)
+                        print(data)
+                        hw_text, att = get_hw(data["last_schedule"])
+                        edit_message(event, hw_text, None)
+                        if att:
+                            send_message(PEER_ID, "Вложение к ДЗ", None, att)
+                        users.pop(event.object.user_id)
+                    elif cmd == "add":
+                        users[event.object.user_id]["act"] = "add"
+                        edit_message(event, "Выберите предмет:", main_keyboard())
+                    elif cmd == "edit":
+                        pass
+                    elif cmd == "remove":
+                        pass
                     else:
                         users[event.object.user_id]['subject'] = cmd
                         users[event.object.user_id]['msid'] = event.object.conversation_message_id
