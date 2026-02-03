@@ -5,6 +5,8 @@ from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 import random as rand
 from dotenv import load_dotenv
 import os
+from pathlib import Path
+import sqlite3
 
 load_dotenv()
 
@@ -142,11 +144,8 @@ def run_bot():
                 if peer_id == PEER_ID:
                     #message handler
                     if msg.get('text', '').lower() == '/bot' and usid == None:
-                        if msg['from_id'] == 579921904:
-                            send_message(PEER_ID, "Пашел нахуй Данил Галиахметов!")
-                        else:
-                            send_message(PEER_ID, "Выберите предмет", main_keyboard())
-                            usid = msg['from_id']
+                        send_message(PEER_ID, "Выберите предмет", main_keyboard())
+                        usid = msg['from_id']
                     elif subject != None and usid == msg["from_id"]:
                         write_hw(subject, msg.get('text', '').lower(), extract_photos(msg))
                         send_message(peer_id, 'Домашнее задание успешно добавлено', None)
@@ -159,6 +158,8 @@ def run_bot():
                             delete_for_all = True
                         )
                         msid = None
+                    elif msg.get('text', '').lower() == "/setid" and msg['from_id'] == data["admin_id"]:
+                        send_message(PEER_ID, "ID успешно установлен")
             #event callback
             elif event.type == VkBotEventType.MESSAGE_EVENT:
                 cmd = event.object.payload['cmd']
