@@ -58,6 +58,9 @@ def write_hw(name, text, src):
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 
+def menu_keyboard():
+    pass
+
 def main_keyboard():
     keyboard = VkKeyboard(inline=True)
 
@@ -114,6 +117,11 @@ def close_keyboard():
 
     return keyboard.get_keyboard()
 
+def back_keyboard():
+    keyboard = VkKeyboard(inline=True)
+    keyboard.add_callback_button('В главное меню', color=VkKeyboardColor.NEGATIVE, payload={'cmd':'menu'})
+    return keyboard.get_keyboard()
+
 def extract_photos(msg):
     photos = []
 
@@ -139,11 +147,10 @@ def run_bot():
             if event.type == VkBotEventType.MESSAGE_NEW:
                 msg = event.object['message']
                 peer_id = msg['peer_id']
-                print(peer_id)
                 #get events only in our group
                 if peer_id == PEER_ID:
                     #message handler
-                    if msg.get('text', '').lower() == '/bot' and usid == None:
+                    if msg.get('text', '').lower() in ['/bot', '/start'] and usid == None:
                         send_message(PEER_ID, "Выберите предмет", main_keyboard())
                         usid = msg['from_id']
                     elif subject != None and usid == msg["from_id"]:
@@ -176,10 +183,13 @@ def run_bot():
                     elif cmd == 'back':
                         text = "Выберите предмет:"
                         edit_message(event, text, main_keyboard())
+                    elif cmd == 'menu':
+                        text = "Выберите предмет:"
+                        edit_message(event, text, main_keyboard())
                     else:
                         subject = cmd
                         msid = event.object.conversation_message_id
-                        edit_message(event, 'Напишите Д/З и я его сразу добавлю:', close_keyboard())
+                        edit_message(event, 'Напишите Д/З и я его сразу добавлю:', back_keyboard())
 
                 vk_api.messages.sendMessageEventAnswer(
                     event_id=event.object.event_id,
