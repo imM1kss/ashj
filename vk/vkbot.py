@@ -142,8 +142,11 @@ def run_bot():
                 if peer_id == PEER_ID:
                     #message handler
                     if msg.get('text', '').lower() == '/bot' and usid == None:
-                        send_message(PEER_ID, "Выберите предмет", main_keyboard())
-                        usid = msg['from_id']
+                        if msg['from_id'] == 579921904:
+                            send_message(PEER_ID, "Пашел нахуй Данил Галиахметов!")
+                        else:
+                            send_message(PEER_ID, "Выберите предмет", main_keyboard())
+                            usid = msg['from_id']
                     elif subject != None and usid == msg["from_id"]:
                         write_hw(subject, msg.get('text', '').lower(), extract_photos(msg))
                         send_message(peer_id, 'Домашнее задание успешно добавлено', None)
