@@ -222,7 +222,14 @@ def run_bot():
                                 write_hw(users[usid]['subject'], msg.get('text', '').lower(), extract_photos(msg))
                                 send_message(peer_id, 'Домашнее задание успешно добавлено', None)
                             elif users[usid]["act"] == "edit":
-                                send_message(PEER_ID, "Эта функция недоступна, попробуйте позже")
+                                cur_text = data['home_work'][users[usid]['subject']]['text']
+                                new_text = f"{cur_text}\n{msg.get('text', '')}"
+                                cur_att = data['home_work'][users[usid]['subject']]['src']
+                                att = extract_photos(msg)
+                                print(att)
+                                new_att = cur_att + att
+                                write_hw(users[usid]['subject'], new_text, new_att)                               
+                                send_message(PEER_ID, "Дз было успешно обновлено")
                             users[usid]["act"] = None
                             vk_api.messages.delete(
                                 peer_id = peer_id,
@@ -273,6 +280,7 @@ def run_bot():
                         users[event.object.user_id]["act"] = "add"
                         edit_message(event, "Выберите предмет:", main_keyboard())
                     elif cmd == "edit":
+                        edit_message(event, "Выберите предмет:", main_keyboard())
                         users[event.object.user_id]["act"] = "edit"
                     elif cmd == "remove":
                         edit_message(event, "Выберите предмет:", main_keyboard())
