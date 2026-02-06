@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta
 import json
 import os
 import requests
@@ -6,25 +5,27 @@ import glob
 from docx import Document
 from vk_api import VkApi
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 load_dotenv()
 
 def run_parser():
     with open("data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
+    
+    today = datetime.today().strftime("%d.%m.%Y")
 
-    ndd, ndf = get_next_day()
+    ndf = get_next_day()
     schedule = None
 
-    if ndd != data.get("last_date"):
-        download_link = get_vk_doc_link(data,ndd)
+    if today != data.get("last_date"):
+        download_link = get_vk_doc_link()
 
         if download_link:
             if download_file(download_link, ndf):
                 file_name = f"{ndf}.docx"
                 schedule = get_schedule(file_name)
-                print(ndd)
-                upload_data(data, "last_date", ndd)
+                upload_data(data, "last_date", today)
                 upload_data(data, "last_schedule", schedule)
     print(schedule)
     return schedule
@@ -40,13 +41,11 @@ def get_next_day():
     else:
         next_day = today + timedelta(days=1)
 
-    ndd = next_day.strftime("%d.%m.%Y")
     ndf = next_day.strftime("%d_%m_%Y")
 
-    return ndd, ndf
+    return ndf
 
-def get_vk_doc_link(data,ndd):
-    print("ran get")
+def get_vk_doc_link():
     vk_session = VkApi(token=os.getenv('access_token'))
     vk_api = vk_session.get_api()
 
@@ -59,9 +58,13 @@ def get_vk_doc_link(data,ndd):
 
     for post in wall.get("items", []):
         for att in post.get("attachments", []):
-            print(att)
-            if att["type"] == "doc" and att['doc']['title']== f"{ndd}.docx" :
-                return att["doc"]["url"]
+            if att["type"] == "doc":
+                doc_date = att['doc']['date']
+                date = datetime.fromtimestamp(doc_date).strftime("%d%m%Y")
+                today = datetime.today()
+                today_str = today.strftime("%d%m%Y")
+                if date == today_str:
+                    return att["doc"]["url"]
 
     return None
 
@@ -119,9 +122,7 @@ def remove_all_schedule():
 
 def upload_data(data, tag, value):
     print(f"Update {tag} to {value}")
-    print(data[tag])
     data[tag] = value
-    print(data[tag])
     with open("data.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 

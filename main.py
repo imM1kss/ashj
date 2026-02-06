@@ -3,75 +3,51 @@ while True:
         import threading
         import time
         import json
+        from datetime import datetime, timedelta
 
-        from parser import run_parser, get_next_day
-        from vkbot import run_bot, send_message
-
-        with open('data.json', 'r', encoding='utf-8') as file:
-            data = json.load(file)
-
-
-        def get_hw(schedule):
-            global data
-
-            text = "\n\nДомашнее задание:"
-            attachments = []
-
-            name2id = {
-                "математика": "math",
-                "физика": "phys",
-                "информатика": "infm",
-                "история": "hist",
-                "география": "geo",
-                "обществознание": "obsh",
-                "русский язык": "rus",
-                "литература": "lit",
-                "физическая культура": "pe",
-                "английский язык": "eng",
-                "химия": "chm",
-                "биология": "bio"
-            }
-
-            for row in schedule:
-                subj_name = row[1].lower()
-                subj_id = name2id.get(subj_name)
-
-                if not subj_id:
-                    continue
-
-                hw = data["home_work"][subj_id]
-
-                if hw["text"]:
-                    text += f"\n{subj_name.capitalize()} — {hw['text']}"
-                else:
-                    text += f"\n{subj_name.capitalize()} — нет данных"
-
-                # добавляем фото
-                if hw["src"]:
-                    attachments.extend(hw["src"])
-
-            return text, attachments
-
+        from parser import run_parser
+        from vkbot import run_bot, send_message, get_cab, get_hw
 
         def parser_pool():
             while True:
                 res = run_parser()
-                ndd, ndf = get_next_day()
+                today = datetime.today()
+
+                if today.weekday() == 5:  
+                    next_day = today + timedelta(days=2)
+                elif today.weekday() == 6:
+                    next_day = today + timedelta(days=1)
+                else:
+                    next_day = today + timedelta(days=1)
+
+                ndd = next_day.strftime("%d.%m")
 
                 if res:
-                    text = f"РАСПИСАНИЕ на {ndd}:"
-                    for el in res:
-                        text += "\n"
-                        for i in el:
-                            text += f"{i} "
+                    with open('data.json', 'r', encoding='utf-8') as file:
+                        data = json.load(file)
 
-                    hw_text, hw_attachments = get_hw(res)
+                    text = f"Расписание({ndd}):\n"
+                    line = "-" *30
+                    text += "".join(line)
+                    for row in data['last_schedule']:
+                        cab = get_cab(row[2])
+                        text += f"\n({row[0][:1]}) {row[1]} [{cab}]"
+                    text += f"\n{line}"
+
+                    hw_text, att = get_hw()
+                    if hw_text == "":
+                        if att:
+                            hw_text = "\nТекст не добавили, но есть вложение."
+                        else:
+                            hw_text = "\nНе задано"
+                    
                     text += hw_text
+                    
+                    send_message(msg = text)
 
-                    send_message(
-                        msg=text,
-                        attachment=",".join(hw_attachments) if hw_attachments else None
-                    )
+                    #высылаем вложения
+                    if att:
+                        send_message(msg = "Вложение к дз", attachment=att)
 
                 time.sleep(600)
 

@@ -52,7 +52,10 @@ def upload_data(tag_path, value):
         json.dump(data, file, ensure_ascii=False, indent=4)
 
 #получить дз
-def get_hw(data):
+def get_hw():
+    with open("data.json", 'r', encoding='utf-8') as file:
+        data = json.load(file)
+
     #текст и вложения
     text = ""
     attachments = []
@@ -74,7 +77,9 @@ def get_hw(data):
     }
 
     #строки в рассписании
+    cnt = 0
     for row in schedule:
+        cnt += 1
         subj_name = row[1].lower() #название предмета
         subj_id = name2id.get(subj_name) #id предмета
 
@@ -86,11 +91,13 @@ def get_hw(data):
 
         #добавляем текст
         if hw["text"]:
-            text += f"\n{subj_name.capitalize()} — {hw['text']}"
+            text += f"\n[{cnt}] {subj_name.capitalize()} ---> {hw['text']}"
+        
 
         # добавляем фото
         if hw["src"]:
             attachments.extend(hw["src"])
+        
 
     return text, attachments
 
@@ -331,12 +338,8 @@ def run_bot():
                     
                     #домашнее задание
                     elif cmd == "home_work":
-                        #получаем data
-                        with open("data.json", 'r', encoding='utf-8') as file:
-                            data = json.load(file)
-
                         # получаем дз
-                        hw_text, att = get_hw(data)
+                        hw_text, att = get_hw()
                         if hw_text == "":
                             if att:
                                 hw_text = "Текст не добавили, но есть вложение."
