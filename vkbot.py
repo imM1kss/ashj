@@ -1,40 +1,62 @@
-import json
+#импортировал все методы для ВК
 from vk_api import VkApi
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
-import random as rand
-from dotenv import load_dotenv
-import os
-from pathlib import Path
-import sqlite3
 
+#импортировал остальные методы
+import random as rand
+import os
+import json
+import re
+from dotenv import load_dotenv
+
+#загружаю переменные среды
 load_dotenv()
 
-#open data.json
+#открываю data.json
 with open("data.json", 'r', encoding="utf-8") as file:
     data = json.load(file)
 
-#constant values
-TOKEN = os.getenv("VK_TOKEN")
-GROUP_ID = data['group_id']
+#постоянные значения
+TOKEN = os.getenv("VK_token")
+GROUP_ID = os.getenv("group_id")
 PEER_ID = data['peer_id']
 
-#standart values
-msid = None
-usid = None
-subject = None
-src = []
-
+#переменные для пользователей
 users = {}
 
-#vk bot api init
+#инициализация api
 vk_session = VkApi(token = TOKEN)
 vk_api = vk_session.get_api()
+
+#инициализация отслеживания событий для бота
 longpoll = VkBotLongPoll(vk_session, GROUP_ID)
 
-def get_hw(schedule):
-    text = "\n\nДомашнее задание:"
+#динамическая установка значения в словаре
+def set_value(data, tag_path, value):
+    for key in tag_path[-1]:
+        data = data[key]
+    data[tag_path[-1]] = value
+
+#обновление data.json
+def upload_data(tag_path, value):
+    #открываем data
+    with open("data.json", 'r', encoding='utf-8') as file:
+        data = json.load(file)
+
+    #ставим наше значение
+    set_value(data, tag_path, value)
+
+    #сохраняем изменения
+    with open('data.json', "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=4)
+
+#получить дз
+def get_hw(data):
+    #текст и вложения
+    text = ""
     attachments = []
+    schedule = data["last_schedule"]
 
     name2id = {
         "математика": "math",
@@ -46,30 +68,25 @@ def get_hw(schedule):
         "русский язык": "rus",
         "литература": "lit",
         "физическая культура": "pe",
-        "английский язык": "eng",
+        "иностранный язык": "eng",
         "химия": "chm",
         "биология": "bio"
     }
 
+    #строки в рассписании
     for row in schedule:
-        subj_name = row[1].lower()
-        print(subj_name)
-        subj_id = name2id.get(subj_name)
-        print(subj_id)
+        subj_name = row[1].lower() #название предмета
+        subj_id = name2id.get(subj_name) #id предмета
 
+        #если нет id
         if not subj_id:
             continue
-
+        #дз
         hw = data["home_work"][subj_id]
 
-        print(hw)
-
+        #добавляем текст
         if hw["text"]:
             text += f"\n{subj_name.capitalize()} — {hw['text']}"
-            print(text)
-        else:
-            text += f"\n{subj_name.capitalize()} — нет данных"
-            print(text)
 
         # добавляем фото
         if hw["src"]:
@@ -77,7 +94,8 @@ def get_hw(schedule):
 
     return text, attachments
 
-def send_message(id = PEER_ID, msg = "Void", keyboard = None, attachment=None):
+#написать сообщение
+def send_message(id = PEER_ID, msg="None", keyboard = None, attachment=None):
     vk_api.messages.send(
         peer_id = id,
         message = msg,
@@ -86,7 +104,8 @@ def send_message(id = PEER_ID, msg = "Void", keyboard = None, attachment=None):
         random_id = rand.randint(0, 100000)
     )
 
-def edit_message(event, text, keyboard):
+#изменить сообщение
+def edit_message(event, text="None", keyboard=None):
     vk_api.messages.edit(
         peer_id=event.object.peer_id,
         conversation_message_id=event.object.conversation_message_id,
@@ -94,6 +113,7 @@ def edit_message(event, text, keyboard):
         keyboard=keyboard
     )
 
+#написать новое дз
 def write_hw(name, text, src):
     with open("data.json", 'r', encoding="utf-8") as file:
         data = json.load(file)
@@ -102,7 +122,7 @@ def write_hw(name, text, src):
     data['home_work'][name]['src'] = src
 
     with open("data.json", "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
+        json.dump(data, file, ensure_ascii=False, indent=4)
 
 
 def menu_keyboard():
@@ -183,10 +203,13 @@ def back_keyboard():
     keyboard.add_callback_button('В главное меню', color=VkKeyboardColor.NEGATIVE, payload={'cmd':'menu'})
     return keyboard.get_keyboard()
 
+#получение фото из сообщения
 def extract_photos(msg):
     photos = []
 
+    #вложения в сообщении
     for att in msg.get('attachments', []):
+        #только фото
         if att['type'] == 'photo':
             photo = att['photo']
             owner_id = photo['owner_id']
@@ -197,107 +220,169 @@ def extract_photos(msg):
                 photos.append(f"photo{owner_id}_{photo_id}_{access_key}")
             else:
                 photos.append(f"photo{owner_id}_{photo_id}")
-
     return photos
 
+# форматируем номер кабинета в нормальный вид
+def get_cab(line):
+    match = re.search(r'\d+', line)
+    return match.group() if match else line
+
+#запуск бота
 def run_bot():
-    global users, data
-    #listen events
+    global users #глобальные переменные
+
+    #перебираем события
     for event in longpoll.listen():
-            #event message
+            #новое сообщение
             if event.type == VkBotEventType.MESSAGE_NEW:
-                msg = event.object['message']
-                peer_id = msg['peer_id']
-                usid = msg["from_id"]
-                #get events only in our group
-                if peer_id == PEER_ID:
-                    #message handler
-                    if msg.get('text', '').lower() in ['/bot', '/start'] and usid not in users:
-                        send_message(PEER_ID, "Выберите предмет", menu_keyboard())
-                        users[usid] = {"subject":None, "msid":None, "src":[], "act":None}
-                        print(users)
-                    elif msg['from_id'] in users:
-                        if users[usid]['subject'] != None:
-                            if users[usid]["act"] == "add":
-                                write_hw(users[usid]['subject'], msg.get('text', '').lower(), extract_photos(msg))
-                                send_message(peer_id, 'Домашнее задание успешно добавлено', None)
-                            elif users[usid]["act"] == "edit":
-                                cur_text = data['home_work'][users[usid]['subject']]['text']
-                                new_text = f"{cur_text}\n{msg.get('text', '')}"
-                                cur_att = data['home_work'][users[usid]['subject']]['src']
+
+                msg = event.object['message'] #сообщение
+
+                peer_id = msg['peer_id'] #id чата(для бота)
+                usid = msg["from_id"] # id пользователя
+                msg_text = msg.get('text', '') # текст сообщения
+
+                #сообщения только из нашего чата
+                if peer_id in PEER_ID:
+                    #основная команда бота
+                    if (msg_text in ['/bot', '/start', '/ashj']) and (usid not in users):
+                        send_message(peer_id, f"Выбери одно из действий:", menu_keyboard())#пишем сообщение с меню
+                        users[usid] = {"subject":None, "msid":None, "src":[], "act":None} #заносим пользователя в сессию
+
+                    #действия во время сессии
+                    elif usid in users:
+                        subject = users[usid]['subject']
+                        action = users[usid]["act"]
+
+                        #выбран предмет
+                        if subject != None:
+
+                            #действие "Новое"
+                            if  action == "add":
+                                write_hw(subject, msg_text, extract_photos(msg)) # записиваем дз
+                                send_message(peer_id, 'Домашнее задание успешно добавлено')
+                            
+                            #действие "Дополнить"
+                            elif action == "edit":
+                                #получение нового текста
+                                cur_text = data['home_work'][subject]['text']
+                                new_text = f"{cur_text}\n{msg_text}"
+                                #получение новых вложений
+                                cur_att = data['home_work'][subject]['src']
                                 att = extract_photos(msg)
-                                print(att)
                                 new_att = cur_att + att
-                                write_hw(users[usid]['subject'], new_text, new_att)                               
+                                #запись дз
+                                write_hw(subject, new_text, new_att)                               
                                 send_message(PEER_ID, "Дз было успешно обновлено")
-                            users[usid]["act"] = None
+                            #завершение процесса
+                            action = None
                             vk_api.messages.delete(
                                 peer_id = peer_id,
                                 conversation_message_ids=[users[usid]['msid']],
                                 delete_for_all = True
                             )
                             users.pop(usid)
-                            print(users)
-                    elif msg.get('text', '').lower() == "/setid" and usid == data["admin_id"]:
-                        send_message(PEER_ID, "ID успешно установлен")
-            #event callback
+            
+            #нажатие кнопки
             elif event.type == VkBotEventType.MESSAGE_EVENT:
-                cmd = event.object.payload['cmd']
-                #the menu available to tha
-                if event.object.user_id in users:
+                cmd = event.object.payload['cmd'] #определение callback
+                peer_id = event.object['peer_id'] #id чата
+                user_id = event.object['user_id'] # id пользователя
+
+                #только тем кто в сессии
+                if user_id in users:
+                    #следующая страница
                     if cmd == "next":
                         text = "Выберите предмет:"
                         edit_message(event, text, next_keyboard())
+                    
+                    #завершение
                     elif cmd == "close":
-                        users.pop(event.object.user_id)
-                        print(users)
-                        edit_message(event, "Действие завершено!", None)
+                        users.pop(user_id)
+                        edit_message(event, "Действие завершено!")
+                    
+                    #назад
                     elif cmd == 'back':
                         text = "Выберите предмет:"
-                        users[event.object.user_id]['subject'] = None
+                        users[user_id]['subject'] = None
                         edit_message(event, text, main_keyboard())
+                    
+                    #меню
                     elif cmd == 'menu':
                         text = "Выберите предмет:"
                         edit_message(event, text, menu_keyboard())
+                    
+                    #расписание
                     elif cmd == "schedule":
                         text = "Расписание:"
+                        
+                        with open('data.json', 'r', encoding='utf-8') as file:
+                            data = json.load(file)
+
+                        line = "-" *30
+                        text = "".join(line)
                         for row in data['last_schedule']:
-                            text += "\n"
-                            for el in row:
-                                text += f"{el} "
-                        edit_message(event, text, None)
-                        users.pop(event.object.user_id)
+                            cab = get_cab(row[2])
+                            text += f"\n({row[0][:1]}) {row[1]} [{cab}]"
+                        text += f"\n{line}"
+                            
+                        edit_message(event, text)
+                        users.pop(user_id)
+                    
+                    #домашнее задание
                     elif cmd == "home_work":
+                        #получаем data
                         with open("data.json", 'r', encoding='utf-8') as file:
                             data = json.load(file)
-                        print(data)
-                        hw_text, att = get_hw(data["last_schedule"])
-                        edit_message(event, hw_text, None)
+
+                        # получаем дз
+                        hw_text, att = get_hw(data)
+                        if hw_text == "":
+                            if att:
+                                hw_text = "Текст не добавили, но есть вложение."
+                            else:
+                                hw_text = "Не задано"
+                        edit_message(event, hw_text)
+
+                        #высылаем вложения
                         if att:
-                            send_message(PEER_ID, "Вложение к ДЗ", None, att)
-                        users.pop(event.object.user_id)
+                            send_message(peer_id, "Вложение к дз", attachment=att)
+                        
+                        # закрываем сессию
+                        users.pop(user_id)
+
+                    #новое
                     elif cmd == "add":
-                        users[event.object.user_id]["act"] = "add"
+                        users[user_id]["act"] = "add"
                         edit_message(event, "Выберите предмет:", main_keyboard())
+                    
+                    #дополнить
                     elif cmd == "edit":
                         edit_message(event, "Выберите предмет:", main_keyboard())
-                        users[event.object.user_id]["act"] = "edit"
+                        users[user_id]["act"] = "edit"
+                    
+                    #удалить
                     elif cmd == "remove":
                         edit_message(event, "Выберите предмет:", main_keyboard())
-                        users[event.object.user_id]["act"] = "remove"
+                        users[user_id]["act"] = "remove"
+                    
+                    #остальное
                     else:
-                        users[event.object.user_id]['subject'] = cmd
-                        users[event.object.user_id]['msid'] = event.object.conversation_message_id
+                        users[user_id]['subject'] = cmd #получение предмета
+                        users[user_id]['msid'] = event.object.conversation_message_id #получение id сообщения
 
-                        if users[event.object.user_id]["act"] == "remove":
-                            write_hw(users[event.object.user_id]['subject'], "", [])
+                        #алгоритм удаления дз
+                        if users[user_id]["act"] == "remove":
+                            write_hw(users[user_id]['subject'], "", [])
                             edit_message(event, 'Дз успешно удалено', None)
-                            users.pop(event.object.user_id)
+                            users.pop(user_id)
 
+                        #добавление дз
                         else:
-                            edit_message(event, 'Напишите Д/З и я его сразу добавлю:', back_keyboard())
+                            edit_message(event, 'Напиши дз и я его сразу добавлю:', back_keyboard())
 
+                #важная штука
                 vk_api.messages.sendMessageEventAnswer(
                     event_id=event.object.event_id,
-                    user_id=event.object.user_id,
-                    peer_id=event.object.peer_id)
+                    user_id=user_id,
+                    peer_id=peer_id)

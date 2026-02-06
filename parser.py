@@ -50,7 +50,7 @@ def get_vk_doc_link(data,ndd):
     vk_session = VkApi(token=os.getenv('access_token'))
     vk_api = vk_session.get_api()
 
-    group_id = vk_api.groups.getById(group_id=data["url_schedule"])[0]["id"]
+    group_id = vk_api.groups.getById(group_id=os.getenv('schedule_id'))[0]["id"]
 
     wall = vk_api.wall.get(
         owner_id=-group_id,
