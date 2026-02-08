@@ -12,20 +12,18 @@ load_dotenv()
 def run_parser():
     with open("data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
-    
-    today = datetime.today().strftime("%d.%m.%Y")
 
-    ndf = get_next_day()
+    ndf, ndd = get_next_day()
     schedule = None
 
-    if today != data.get("last_date"):
-        download_link = get_vk_doc_link()
+    if ndd != data.get("last_date"):
+        download_link = get_vk_doc_link(ndd)
 
         if download_link:
             if download_file(download_link, ndf):
                 file_name = f"{ndf}.docx"
                 schedule = get_schedule(file_name)
-                upload_data(data, "last_date", today)
+                upload_data(data, "last_date", ndd)
                 upload_data(data, "last_schedule", schedule)
     print(schedule)
     return schedule
@@ -42,10 +40,11 @@ def get_next_day():
         next_day = today + timedelta(days=1)
 
     ndf = next_day.strftime("%d_%m_%Y")
+    ndd = next_day.strftime("%d.%m.%Y")
 
-    return ndf
+    return ndf, ndd
 
-def get_vk_doc_link():
+def get_vk_doc_link(ndd):
     vk_session = VkApi(token=os.getenv('access_token'))
     vk_api = vk_session.get_api()
 
@@ -59,11 +58,7 @@ def get_vk_doc_link():
     for post in wall.get("items", []):
         for att in post.get("attachments", []):
             if att["type"] == "doc":
-                doc_date = att['doc']['date']
-                date = datetime.fromtimestamp(doc_date).strftime("%d%m%Y")
-                today = datetime.today()
-                today_str = today.strftime("%d%m%Y")
-                if date == today_str:
+                if att['doc']['title'] == f"{ndd}.docx":
                     return att["doc"]["url"]
 
     return None
