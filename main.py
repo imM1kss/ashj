@@ -8,6 +8,13 @@ while True:
         from parser import run_parser
         from vkbot import run_bot, send_message, get_cab, get_hw
 
+        from logging_config import setup_logging
+        import logging
+
+        setup_logging()
+
+        logger = logging.getLogger("main")
+
         def parser_pool():
             while True:
                 res = run_parser()
@@ -44,10 +51,14 @@ while True:
                     text += hw_text
                     
                     send_message(msg = text)
+                    logger.info("Bot send schedule and home work:\n%s", text)
 
                     #высылаем вложения
                     if att:
                         send_message(msg = "Вложение к дз", attachment=att)
+                        logger.info("Bot send attachments")
+                
+                logger.info("Parser sleep")
 
                 time.sleep(600)
 
@@ -60,5 +71,5 @@ while True:
 
         bot_thread.join()
         parser_thread.join()
-    except Exception as e:
-        print(e)
+    except Exception:
+        logger.exception("Exception:")

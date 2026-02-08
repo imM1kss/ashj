@@ -10,6 +10,10 @@ import json
 import re
 from dotenv import load_dotenv
 
+import logging
+
+logger = logging.getLogger("vk bot")
+
 #загружаю переменные среды
 load_dotenv()
 
@@ -237,6 +241,7 @@ def get_cab(line):
 #запуск бота
 def run_bot():
     global users #глобальные переменные
+    logger.info("Bot start")
 
     #перебираем события
     for event in longpoll.listen():
@@ -253,6 +258,7 @@ def run_bot():
                 if peer_id in PEER_ID:
                     #основная команда бота
                     if (msg_text in ['/bot', '/start', '/ashj']) and (usid not in users):
+                        logger.info("User %s call menu %s in group %s", usid, msg_text, peer_id)
                         send_message(peer_id, f"Выбери одно из действий:", menu_keyboard())#пишем сообщение с меню
                         users[usid] = {"subject":None, "msid":None, "src":[], "act":None} #заносим пользователя в сессию
 
@@ -266,8 +272,10 @@ def run_bot():
 
                             #действие "Новое"
                             if  action == "add":
-                                write_hw(subject, msg_text, extract_photos(msg)) # записиваем дз
+                                att = extract_photos(msg)
+                                write_hw(subject, msg_text,att) # записиваем дз
                                 send_message(peer_id, 'Домашнее задание успешно добавлено')
+                                logger.info("User %s add home work for %s. text: %s, attacments: %s", usid, subject, msg_text, att)
                             
                             #действие "Дополнить"
                             elif action == "edit":
@@ -281,6 +289,7 @@ def run_bot():
                                 #запись дз
                                 write_hw(subject, new_text, new_att)                               
                                 send_message(PEER_ID, "Дз было успешно обновлено")
+                                logger.info("User %s edit home work for %s. Text %s -> %s. Att %s -> %s", usid, subject, cur_text, new_text, cur_att, new_att)
                             #завершение процесса
                             action = None
                             vk_api.messages.delete(
@@ -295,6 +304,8 @@ def run_bot():
                 cmd = event.object.payload['cmd'] #определение callback
                 peer_id = event.object['peer_id'] #id чата
                 user_id = event.object['user_id'] # id пользователя
+
+                logger.info("User %s tap key %s in group %s", user_id, cmd, peer_id)
 
                 #только тем кто в сессии
                 if user_id in users:
@@ -334,6 +345,7 @@ def run_bot():
                         text += f"\n{line}"
                             
                         edit_message(event, text)
+                        logger.info("User %s get schedule: %s", user_id, text)
                         users.pop(user_id)
                     
                     #домашнее задание
@@ -346,6 +358,7 @@ def run_bot():
                             else:
                                 hw_text = "Не задано"
                         edit_message(event, hw_text)
+                        logger.info("user %s get homework: text -> %s. att -> %s", user_id, hw_text, att)
 
                         #высылаем вложения
                         if att:
@@ -376,6 +389,7 @@ def run_bot():
 
                         #алгоритм удаления дз
                         if users[user_id]["act"] == "remove":
+                            logger.info("Homework for %s was removed by %s in group %s", users[user_id]['subject'], user_id, peer_id)
                             write_hw(users[user_id]['subject'], "", [])
                             edit_message(event, 'Дз успешно удалено', None)
                             users.pop(user_id)

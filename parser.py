@@ -6,10 +6,14 @@ from docx import Document
 from vk_api import VkApi
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger("parser")
 
 load_dotenv()
 
 def run_parser():
+    logger.info("Parser start")
     with open("data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
 
@@ -25,7 +29,6 @@ def run_parser():
                 schedule = get_schedule(file_name)
                 upload_data(data, "last_date", ndd)
                 upload_data(data, "last_schedule", schedule)
-    print(schedule)
     return schedule
 
 
@@ -59,8 +62,9 @@ def get_vk_doc_link(ndd):
         for att in post.get("attachments", []):
             if att["type"] == "doc":
                 if att['doc']['title'] == f"{ndd}.docx":
+                    logger.info("Parser get download link %s", att["doc"]["url"])
                     return att["doc"]["url"]
-
+    
     return None
 
 def download_file(download_link, ndf):
@@ -73,11 +77,15 @@ def download_file(download_link, ndf):
     response = requests.get(download_link, stream=True)
     response.raise_for_status()
 
+    logger.info("Parser take http request to %s. Status: %s", download_link, response.status_code)
+
     remove_all_schedule()
 
     with open(file_path, "wb") as f:
         for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
+    
+    logger.info("File was downloaded. Path: %s", file_path)
 
     return True
 
@@ -114,13 +122,13 @@ def clean(items):
 def remove_all_schedule():
     for file_path in glob.glob(os.path.join(os.getcwd(), "*.docx")):
         os.remove(file_path)
+    logger.info("All .docx removed")
 
 def upload_data(data, tag, value):
-    print(f"Update {tag} to {value}")
+    logger.info("Upload %s to %s", tag, value)
     data[tag] = value
     with open("data.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
     result = run_parser()
-    print(result)
