@@ -1,0 +1,26 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SSH_P }}
+
+      - name: SSH into Server and Deploy
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_U }}@${{ secrets.SSH_A }} \
+          "cd ${{ secrets.WORK_DIR }} && \
+            git stash && \
+            git pull origin main && \
+            (git stash pop || echo 'No changes to apply') && \
+            systemctl --user restart slavikd
