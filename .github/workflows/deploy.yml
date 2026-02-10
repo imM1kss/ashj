@@ -20,6 +20,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_U }}@${{ secrets.SSH_A }} \
           cd ${{ secrets.WORK_DIR }} && \
+          git config --global --add safe.directory '*' && \
             git stash && \
             git pull origin main && \
             (git stash pop || echo 'No changes to apply') && \
