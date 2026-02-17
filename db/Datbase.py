@@ -71,8 +71,44 @@ class Database:
                 subject_id INTEGER NOT NULL,
                 description TEXT,
                 attachments TEXT,
+                lessons_left INTEGER NOT NULL DEFAULT 1 CHECK(lessons_left >= 0)
                                
                 FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
                 FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
             );
             """)
+
+            def ensure_user(self,
+                            full_name: str,
+                            role: str,
+                            telegram_id: Optional[int] = None,
+                            vk_id: Optional[int] = None,
+                            group_id: Optional[int] = None,
+                            ) -> int:
+                if not telegram_id and not vk_id:
+                    raise ValueError("Нужно хотя-бы ВК или ТГ")
+                
+                with self._connect() as conn:
+                    cur = conn.cursor()
+
+                    cur.execute("""
+                        SELECT id, telegram_id, vk_id FROM users
+                        WHERE telegram_id = ? OR vk_id = ? OR group_id = ?
+                    """, (telegram_id, vk_id, group_id))
+                    row = cur.fetchone()
+
+                    if row:
+                        user_id = row["id"]
+
+                        if telegram_id and not row["telegram_id"]:
+                            cur.execute("UPDATE users SET telegram_id = ? WHERE id = ?", (telegram_id, user_id))
+                        elif vk_id and not row["vk_id"]:
+                            cur.execute("UPDATE users SET vk_id = ? WHERE id = ?", (vk_id, user_id))
+                        elif group_id and not row["group_id"]:
+                            cur.execute("UPDATE users SET group_id = ? WHERE id = ?", (group_id, user_id))
+                        
+                        else:
+                            cur.execute("""
+                                INSERT INTO users (telegram_id, vk_id, group_id, full_name. role) VALUES (?,?,?,?,?),
+                            """, (telegram_id, vk_id, group_id, full_name, role))
+                        return user_id
