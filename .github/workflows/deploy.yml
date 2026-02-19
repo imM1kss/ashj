@@ -18,7 +18,7 @@ jobs:
 
       - name: SSH into Server and Deploy
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_U }}@${{ secrets.SSH_A }} "
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_U }}@${{ secrets.SSH_A }} -p ${{ secrets.SSH_PORT }} "
           cd ${{ secrets.WORK_DIR }} || { echo 'Directory not found'; exit 1; }
           echo 'Current directory:' && pwd
           git config --global --add safe.directory ${{ secrets.WORK_DIR }}
