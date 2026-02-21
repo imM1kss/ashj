@@ -22,7 +22,7 @@ class Database:
                 vk_id INTEGER UNIQUE
             );
             
-            CREATE TABLE IF NOT EXISTS students (
+            CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 group_id INTEGER,
                 full_name TEXT NOT NULL,
@@ -30,7 +30,7 @@ class Database:
                 vk_id INTEGER UNIQUE,
                 role TEXT NOT NULL CHECK (role IN ('user','admin')),
                                
-                FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+                FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL,
                 UNIQUE(full_name, group_id)
             );
             CREATE TABLE IF NOT EXISTS subjects (
@@ -57,13 +57,13 @@ class Database:
             );
             CREATE TABLE IF NOT EXISTS grades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
                 subject_id INTEGER NOT NULL,
                 month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
                 grade INTEGER NOT NULL CHECK (grade BETWEEN 1 AND 5),
                                
                 FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
-                FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS homework (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,44 +71,114 @@ class Database:
                 subject_id INTEGER NOT NULL,
                 description TEXT,
                 attachments TEXT,
-                lessons_left INTEGER NOT NULL DEFAULT 1 CHECK(lessons_left >= 0)
+                lessons_left INTEGER NOT NULL DEFAULT 1 CHECK(lessons_left >= 0),
                                
                 FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
                 FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
             );
             """)
 
-            def ensure_user(self,
-                            full_name: str,
-                            role: str,
-                            telegram_id: Optional[int] = None,
-                            vk_id: Optional[int] = None,
-                            group_id: Optional[int] = None,
-                            ) -> int:
-                if not telegram_id and not vk_id:
-                    raise ValueError("Нужно хотя-бы ВК или ТГ")
+    def ensure_user(self,
+                    full_name: str,
+                    role: str,
+                    telegram_id: Optional[int] = None,
+                    vk_id: Optional[int] = None,
+                    group_id: Optional[int] = None,
+                    ) -> int:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужно хотя-бы ВК или ТГ")
+        
+        if role not in ("user", "admin"):
+            raise ValueError("Неверная роль")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+
+            cur.execute("""
+                SELECT id, telegram_id, vk_id, group_id FROM users
+                WHERE telegram_id = ? OR vk_id = ?
+            """, (telegram_id, vk_id))
+            row = cur.fetchone()
+
+            if row:
+                user_id = row["id"]
+
+                if telegram_id and not row["telegram_id"]:
+                    cur.execute("UPDATE users SET telegram_id = ? WHERE id = ?", (telegram_id, user_id))
+                if vk_id and not row["vk_id"]:
+                    cur.execute("UPDATE users SET vk_id = ? WHERE id = ?", (vk_id, user_id))
+                if group_id and not row["group_id"]:
+                    cur.execute("UPDATE users SET group_id = ? WHERE id = ?", (group_id, user_id))
                 
-                with self._connect() as conn:
-                    cur = conn.cursor()
+            else:
+                cur.execute("""
+                    INSERT INTO users (telegram_id, vk_id, group_id, full_name, role) VALUES (?,?,?,?,?)
+                """, (telegram_id, vk_id, group_id, full_name, role))
+                user_id = cur.lastrowid
+            return user_id
+    
+    def get_user_id(self,
+                    telegram_id: Optional[int] = None,
+                    vk_id: Optional[int] = None,
+                    ) -> int:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужно хотя-бы ВК или ТГ")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT id FROM users
+                WHERE telegram_id = ? OR vk_id = ?
+                """, (telegram_id, vk_id))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Пользователь не найден")
+            return row["id"]
+    
+    def ensure_group(self,
+                     name: str,
+                     telegram_id: Optional[int] = None,
+                     vk_id: Optional[int] = None
+                     ) -> int:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужно хотя-бы ВК или ТГ")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT id FROM groups
+                WHERE telegram_id = ? OR vk_id = ?
+            """, (telegram_id, vk_id))
+            row = cur.fetchone()
 
-                    cur.execute("""
-                        SELECT id, telegram_id, vk_id FROM users
-                        WHERE telegram_id = ? OR vk_id = ? OR group_id = ?
-                    """, (telegram_id, vk_id, group_id))
-                    row = cur.fetchone()
+            if row:
+                group_id = row["id"]
 
-                    if row:
-                        user_id = row["id"]
+                if telegram_id and not row["telegram_id"]:
+                    cur.execute("UPDATE groups SET telegram_id = ? WHERE id = ?", (telegram_id, group_id))
+                elif vk_id and not row["vk_id"]:
+                    cur.execute("UPDATE groups SET vk_id = ? WHERE id = ?", (vk_id, group_id))
+            else:
+                cur.execute("""
+                    INSERT INTO groups (name, telegram_id, vk_id)
+                    VALUES (?,?,?)
+                """, (name, telegram_id, vk_id))
+                group_id = cur.lastrowid
+            return group_id
+    
+    def get_group_id(self, telegram_id: Optional[int] = None, vk_id: Optional[int] = None) -> int:
 
-                        if telegram_id and not row["telegram_id"]:
-                            cur.execute("UPDATE users SET telegram_id = ? WHERE id = ?", (telegram_id, user_id))
-                        elif vk_id and not row["vk_id"]:
-                            cur.execute("UPDATE users SET vk_id = ? WHERE id = ?", (vk_id, user_id))
-                        elif group_id and not row["group_id"]:
-                            cur.execute("UPDATE users SET group_id = ? WHERE id = ?", (group_id, user_id))
-                        
-                        else:
-                            cur.execute("""
-                                INSERT INTO users (telegram_id, vk_id, group_id, full_name. role) VALUES (?,?,?,?,?),
-                            """, (telegram_id, vk_id, group_id, full_name, role))
-                        return user_id
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужно хотя-бы ВК или ТГ")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT id FROM groups
+                WHERE telegram_id = ? OR vk_id = ?
+                """, (telegram_id, vk_id))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Группа не найдена")
+            return row["id"]
+    
