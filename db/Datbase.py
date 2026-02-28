@@ -78,6 +78,7 @@ class Database:
             );
             """)
 
+    #--------------------------------------USERS---------------------------------
     def ensure_user(self,
                     full_name: str,
                     role: str,
@@ -90,6 +91,11 @@ class Database:
         
         if role not in ("user", "admin"):
             raise ValueError("Неверная роль")
+        
+        if full_name is None:
+            raise ValueError("full_name is None")
+        if role is None:
+            raise ValueError("role is None")
         
         with self._connect() as conn:
             cur = conn.cursor()
@@ -107,7 +113,7 @@ class Database:
                     cur.execute("UPDATE users SET telegram_id = ? WHERE id = ?", (telegram_id, user_id))
                 if vk_id and not row["vk_id"]:
                     cur.execute("UPDATE users SET vk_id = ? WHERE id = ?", (vk_id, user_id))
-                if group_id and not row["group_id"]:
+                if group_id is not None and not row["group_id"] is None:
                     cur.execute("UPDATE users SET group_id = ? WHERE id = ?", (group_id, user_id))
                 
             else:
@@ -135,6 +141,15 @@ class Database:
                 raise ValueError("Пользователь не найден")
             return row["id"]
     
+    def delete_user(self, user_id:int):
+        if user_id is None:
+            raise ValueError("user_id is None")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    
+    #------------------------------GROUPS----------------------------------
     def ensure_group(self,
                      name: str,
                      telegram_id: Optional[int] = None,
@@ -146,7 +161,7 @@ class Database:
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("""
-                SELECT id FROM groups
+                SELECT id,telegram_id,vk_id FROM groups
                 WHERE telegram_id = ? OR vk_id = ?
             """, (telegram_id, vk_id))
             row = cur.fetchone()
@@ -182,3 +197,98 @@ class Database:
                 raise ValueError("Группа не найдена")
             return row["id"]
     
+    def get_group_names(self):
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM groups ORDER BY name")
+            return [row["name"] for row in cur.fetchall()]
+    
+    #------------------------------SUBJECTS--------------------------------
+    def ensure_subject(self,
+                       name: str,
+                       group_id:int,
+                       year:int,
+                       semester: int) -> int:
+        if name is None:
+            raise ValueError("Name not specified")
+        if group_id is None:
+            raise ValueError("Group not specified")
+        if year is None:
+            raise ValueError("Year not specified")
+        if semester is None:
+            raise ValueError("Semester not specified")
+
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM subjects WHERE group_id = ? AND name = ? AND year = ? AND semester = ?", (group_id,name,year,semester))
+            row = cur.fetchone()
+
+            if row:
+                return row["id"]
+            else:
+                cur.execute("INSERT INTO subjects (name,group_id,year,semester) VALUES (?,?,?,?)", (name, group_id, year, semester))
+                return cur.lastrowid
+    
+    def get_subjects(self, group_id:int):
+        if group_id is None:
+            raise ValueError("Group not specified")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id,name FROM subjects WHERE group_id = ?", (group_id,))
+            return [(row["id"],row["name"]) for row in cur.fetchall()]
+    
+    def delete_subject(self, id_sub: int) -> bool:
+        if id_sub is None:
+            raise ValueError("Укажите хотя-бы что-то (id or name)")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM subjects WHERE id = ?", (id_sub,))
+            return cur.rowcount > 0
+    
+    def get_subject_id(self, group_id: int, name: str) -> int:
+        if group_id is None or name is None:
+            raise ValueError("group or name not specified")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM subjects WHERE group_id = ? AND name = ?",(group_id,name))
+            row = cur.fetchone()
+            if row:
+                return row["id"]
+            else:
+                raise ValueError("Subject is not founded")
+    
+    def get_subject_name(self, sub_id:int) -> int:
+        if id is None:
+            raise ValueError("id not specified")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM subjects WHERE id=?",(sub_id,))
+            row = cur.fetchone()
+            return row["name"]
+    
+    #--------------------------SCHEDULE----------------------
+    def ensure_schedule(self, group_id:int, subject_id:int, lesson_num:int, classroom:str):
+        if group_id is None:
+            raise ValueError("Group_id not specified")
+        if subject_id is None:
+            raise ValueError("Subject_id is None")
+        if lesson_num is None:
+            raise ValueError("lesson_num is None")
+        if classroom is None:
+            raise ValueError("Classroom is None")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("INSERT INTO schedule (group_id,subject_id,lesson_num,classroom) VALUES (?,?,?,?)",
+                        (group_id,subject_id,lesson_num,classroom))
+    
+    def delete_schedule(self):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM schedule")
+            conn.execute("DELETE FROM sqlite_sequence WHERE name='schedule'")
+    
+
