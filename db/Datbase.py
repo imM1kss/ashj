@@ -49,21 +49,21 @@ class Database:
                 subject_id INTEGER NOT NULL,
                 lesson_num INTEGER NOT NULL,
                 classroom TEXT NOT  NULL,
+                date TEXT NOT NULL,
                                
                 FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
                 FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
                                
-                UNIQUE(group_id, lesson_num)
+                UNIQUE(group_id, lesson_num, date)
             );
             CREATE TABLE IF NOT EXISTS grades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
-                subject_id INTEGER NOT NULL,
-                month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+                schedule_id INTEGER NOT NULL,
                 grade INTEGER NOT NULL CHECK (grade BETWEEN 1 AND 5),
                                
-                FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (schedule_id) REFERENCES schedule(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS homework (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,6 +148,25 @@ class Database:
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    
+    def is_admin(self,
+                telegram_id:Optional[int] = None,
+                vk_id:Optional[int] = None,
+                user_id: Optional[int] = None):
+        if telegram_id is None and vk_id is None and user_id is None:
+            raise ValueError("Укажите хотя-бы какое-то id")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT role FROM users WHERE telegram_id = ? OR vk_id = ? OR user_id = ?",
+                        (telegram_id, vk_id, user_id))
+            row = cur.fetchone()
+            if row:
+                if row['role'] == "admin":
+                    return True
+                else: 
+                    return False
+
     
     #------------------------------GROUPS----------------------------------
     def ensure_group(self,
@@ -271,7 +290,7 @@ class Database:
             return row["name"]
     
     #--------------------------SCHEDULE----------------------
-    def ensure_schedule(self, group_id:int, subject_id:int, lesson_num:int, classroom:str):
+    def ensure_schedule(self, group_id:int, subject_id:int, lesson_num:int, classroom:str, date:str):
         if group_id is None:
             raise ValueError("Group_id not specified")
         if subject_id is None:
@@ -280,15 +299,83 @@ class Database:
             raise ValueError("lesson_num is None")
         if classroom is None:
             raise ValueError("Classroom is None")
+        if date is None:
+            raise ValueError("date is None")
         
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("INSERT INTO schedule (group_id,subject_id,lesson_num,classroom) VALUES (?,?,?,?)",
                         (group_id,subject_id,lesson_num,classroom))
     
-    def delete_schedule(self):
+    def delete_schedule(self, date:str, group_id:int):
+        if date is None or group_id is None:
+            raise ValueError("Надо указать все парамметры для удаления рассписания")
+        
         with self._connect() as conn:
-            conn.execute("DELETE FROM schedule")
-            conn.execute("DELETE FROM sqlite_sequence WHERE name='schedule'")
+            cur = conn.cursor()
+            cur.execute("DELETE FROM schedule WHERE group_id = ? AND date = ?",
+                        (group_id,date))
+            
+            if cur.rowcount == 0:
+                raise ValueError("Расписание на эту дату не найдено")
     
+    def get_schedule(self,
+                     group_id:int,
+                     date:str):
+        if group_id is None or date is None:
+            raise ValueError("Нужно указать все парраметры для получения рассписания")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT subject_id,classroom,lesson_num FROM schedule WHERE group_id = ? AND date = ? ORDER BY lesson_num",
+                        (group_id, date))
+            rows = cur.fetchall()
+            if not rows:
+                raise ValueError("Рассписание на этот день не найдено")
+            
+            return [(row["subject_id"],row["lesson_num"],row["classroom"]) for row in rows]
+    
+    def get_schedule_id(self,
+                        subject_id:int,
+                        date:str) -> int:
+        if subject_id is None:
+            raise ValueError("Subject id is None")
+        if date is None:
+            raise ValueError("Date is None")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM schedule WHERE subject_id = ? AND date = ?",
+                        (subject_id,date))
+    
+    #-------------------------GRADES----------------------------------
 
+    def ensure_grade(self,
+                     user_id:int,
+                     schedule_id:int,
+                     grade:int):
+        if user_id is None:
+            raise ValueError("User id is none")
+        if schedule_id is None:
+            raise ValueError("Schedule id is none")
+        if grade is None:
+            raise ValueError("Grade is None")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("INSERT INTO grades (user_id,schedule_id,grade) VALUES (?,?,?)",
+                        (user_id,schedule_id,grade))
+    def delete_grade(self,
+                     user_id:int,
+                     schedule_id:int):
+        if user_id is None:
+            raise ValueError("user id is None")
+        if schedule_id is None:
+            raise ValueError("Schedule id is None")
+
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM grades WHERE user_id = ? AND schedule_id = ?",
+                        (user_id, schedule_id)) 
+            if cur.rowcount == 0:
+                raise ValueError("Оценка не найдена")
