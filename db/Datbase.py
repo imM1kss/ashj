@@ -1,5 +1,6 @@
 import sqlite3
 from typing import List, Tuple, Optional
+import json
 
 class Database:
     def __init__(self, path: str = "data.db"):
@@ -38,9 +39,8 @@ class Database:
                 name TEXT NOT NULL,
                 group_id INTEGER NOT NULL,
                 year INTEGER NOT NULL,
-                semester INTEGER NOT NULL CHECK (semester BETWEEN 1 AND 2),
                 
-                UNIQUE (group_id, name, year, semester),
+                UNIQUE (group_id, name, year),
                 FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS schedule (
@@ -80,22 +80,15 @@ class Database:
 
     #--------------------------------------USERS---------------------------------
     def ensure_user(self,
-                    full_name: str,
-                    role: str,
+                    full_name:Optional[str] = None,
+                    role: Optional[str] = "user",
                     telegram_id: Optional[int] = None,
                     vk_id: Optional[int] = None,
                     group_id: Optional[int] = None,
                     ) -> int:
         if telegram_id is None and vk_id is None:
             raise ValueError("Нужно хотя-бы ВК или ТГ")
-        
-        if role not in ("user", "admin"):
-            raise ValueError("Неверная роль")
-        
-        if full_name is None:
-            raise ValueError("full_name is None")
-        if role is None:
-            raise ValueError("role is None")
+    
         
         with self._connect() as conn:
             cur = conn.cursor()
@@ -115,6 +108,10 @@ class Database:
                     cur.execute("UPDATE users SET vk_id = ? WHERE id = ?", (vk_id, user_id))
                 if group_id is not None and not row["group_id"] is None:
                     cur.execute("UPDATE users SET group_id = ? WHERE id = ?", (group_id, user_id))
+                if full_name is not None and not row["full_name"]:
+                    cur.execute("UPDATE users SET full_name = ? WHERE id = ?", (full_name, user_id))
+                if role == "admin" and row["role"] == "user":
+                    cur.execute("UPDATE users SET role = ? WHERE id = ?", (role,user_id))
                 
             else:
                 cur.execute("""
@@ -123,36 +120,22 @@ class Database:
                 user_id = cur.lastrowid
             return user_id
     
-    def get_user_id(self,
+    def delete_user(self, 
+                    user_id:Optional[int] = None,
                     telegram_id: Optional[int] = None,
-                    vk_id: Optional[int] = None,
-                    ) -> int:
-        if telegram_id is None and vk_id is None:
-            raise ValueError("Нужно хотя-бы ВК или ТГ")
-        
-        with self._connect() as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT id FROM users
-                WHERE telegram_id = ? OR vk_id = ?
-                """, (telegram_id, vk_id))
-            row = cur.fetchone()
-            if not row:
-                raise ValueError("Пользователь не найден")
-            return row["id"]
-    
-    def delete_user(self, user_id:int):
-        if user_id is None:
+                    vk_id: Optional[int] = None) -> None:
+        if user_id is None and telegram_id is None and vk_id is None:
             raise ValueError("user_id is None")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            cur.execute("DELETE FROM users WHERE id = ? OR telegram_id = ? OR vk_id = ?",
+                        (user_id,telegram_id, vk_id))
     
     def is_admin(self,
                 telegram_id:Optional[int] = None,
                 vk_id:Optional[int] = None,
-                user_id: Optional[int] = None):
+                user_id: Optional[int] = None) -> bool:
         if telegram_id is None and vk_id is None and user_id is None:
             raise ValueError("Укажите хотя-бы какое-то id")
         
@@ -163,14 +146,13 @@ class Database:
             row = cur.fetchone()
             if row:
                 if row['role'] == "admin":
-                    return True
-                else: 
-                    return False
+                    return True 
+            return False
 
     
     #------------------------------GROUPS----------------------------------
     def ensure_group(self,
-                     name: str,
+                     name: Optional[str] = None,
                      telegram_id: Optional[int] = None,
                      vk_id: Optional[int] = None
                      ) -> int:
@@ -188,11 +170,13 @@ class Database:
             if row:
                 group_id = row["id"]
 
-                if telegram_id and not row["telegram_id"]:
+                if telegram_id is not None and not row["telegram_id"]:
                     cur.execute("UPDATE groups SET telegram_id = ? WHERE id = ?", (telegram_id, group_id))
-                elif vk_id and not row["vk_id"]:
+                elif vk_id is not None and not row["vk_id"]:
                     cur.execute("UPDATE groups SET vk_id = ? WHERE id = ?", (vk_id, group_id))
             else:
+                if name is None:
+                    raise ValueError("Группа не найдена и не может быть создана, так как нет нужнх парраметров")
                 cur.execute("""
                     INSERT INTO groups (name, telegram_id, vk_id)
                     VALUES (?,?,?)
@@ -200,23 +184,26 @@ class Database:
                 group_id = cur.lastrowid
             return group_id
     
-    def get_group_id(self, telegram_id: Optional[int] = None, vk_id: Optional[int] = None) -> int:
+    def get_group_id(self, 
+                     telegram_id: Optional[int] = None, 
+                     vk_id: Optional[int] = None,
+                     name: Optional[str] = None) -> int:
 
-        if telegram_id is None and vk_id is None:
-            raise ValueError("Нужно хотя-бы ВК или ТГ")
+        if telegram_id is None and vk_id is None and name is None:
+            raise ValueError("Нужно хотя-бы ВК или ТГ или название")
         
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("""
                 SELECT id FROM groups
-                WHERE telegram_id = ? OR vk_id = ?
-                """, (telegram_id, vk_id))
+                WHERE telegram_id = ? OR vk_id = ? OR name = ?
+                """, (telegram_id, vk_id, name))
             row = cur.fetchone()
             if not row:
                 raise ValueError("Группа не найдена")
             return row["id"]
     
-    def get_group_names(self):
+    def get_group_names(self) -> List[str]:
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("SELECT name FROM groups ORDER BY name")
@@ -224,129 +211,194 @@ class Database:
     
     #------------------------------SUBJECTS--------------------------------
     def ensure_subject(self,
-                       name: str,
-                       group_id:int,
-                       year:int,
-                       semester: int) -> int:
+                       name: str = None,
+                       year:int = None,
+                       telegram_id: Optional[int] = None,
+                       vk_id:Optional[int] = None) -> int:
         if name is None:
             raise ValueError("Name not specified")
-        if group_id is None:
-            raise ValueError("Group not specified")
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужно зотя-бы вк или тг")
         if year is None:
             raise ValueError("Year not specified")
-        if semester is None:
-            raise ValueError("Semester not specified")
 
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT id FROM subjects WHERE group_id = ? AND name = ? AND year = ? AND semester = ?", (group_id,name,year,semester))
+            cur.execute("""SELECT id 
+                        FROM subjects
+                        JOIN groups ON subjects.group_id = groups.id 
+                        WHERE (groups.telegram_id = ? OR groups.vk_id = ?)
+                        AND subjects.name = ? 
+                        AND year = ? """,
+                        (telegram_id,vk_id,name,year))
             row = cur.fetchone()
 
             if row:
                 return row["id"]
             else:
+                group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
                 cur.execute("INSERT INTO subjects (name,group_id,year,semester) VALUES (?,?,?,?)", (name, group_id, year, semester))
                 return cur.lastrowid
     
-    def get_subjects(self, group_id:int):
-        if group_id is None:
-            raise ValueError("Group not specified")
+    def get_subjects(self,
+                     telegram_id: Optional[int] = None,
+                     vk_id: Optional[int] = None) -> List[Tuple[int,str]]:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT id,name FROM subjects WHERE group_id = ?", (group_id,))
+            cur.execute("""SELECT id,name 
+                        FROM subjects 
+                        JOIN groups ON subjects.group_id = groups.id 
+                        WHERE groups.telegram_id = ? OR groups.vk_id = ?""",
+                        (telegram_id, vk_id))
             return [(row["id"],row["name"]) for row in cur.fetchall()]
     
-    def delete_subject(self, id_sub: int) -> bool:
-        if id_sub is None:
-            raise ValueError("Укажите хотя-бы что-то (id or name)")
+    def delete_subject(self,
+                       telegram_id: Optional[int] = None,
+                       vk_id: Optional[int] = None,
+                       name:str = None,
+                       year:int = None) -> bool:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Укажите хотя-бы ВК или ТГ")
+        if name is None or year is None:
+            raise ValueError("Name or Year is None")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("DELETE FROM subjects WHERE id = ?", (id_sub,))
+            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+            cur.execute("DELETE FROM subjects WHERE group_id = ? AND name = ? AND year = ?", (group_id,name,year))
             return cur.rowcount > 0
     
-    def get_subject_id(self, group_id: int, name: str) -> int:
-        if group_id is None or name is None:
-            raise ValueError("group or name not specified")
+    def get_subject_id(self,
+                       telegram_id:Optional[int] = None,
+                       vk_id:Optional[int] = None, 
+                       group_id:Optional[int] = None,
+                       name: str = None,
+                       year: int = None) -> int:
+        if telegram_id is None and vk_id is None and group_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг или id")
+        if name is None or year is None:
+            raise ValueError("Наименование или Год не указаны")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT id FROM subjects WHERE group_id = ? AND name = ?",(group_id,name))
+            if group_id is None:
+                group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+            cur.execute("""SELECT id FROM subjects
+                        WHERE group_id = ? 
+                        AND name = ?
+                        AND year = ?""",(group_id,name, year))
             row = cur.fetchone()
             if row:
                 return row["id"]
             else:
                 raise ValueError("Subject is not founded")
     
-    def get_subject_name(self, sub_id:int) -> int:
-        if id is None:
-            raise ValueError("id not specified")
+    def get_subject_name(self,
+                         telegram_id:Optional[int] = None,
+                         vk_id:Optional[int] = None,
+                         name:str = None,
+                         year:int = None) -> str:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
+        if name is None or year is None:
+            raise ValueError("Наименование или Год не указаны")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT name FROM subjects WHERE id=?",(sub_id,))
+            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+            cur.execute("SELECT name FROM subjects WHERE group_id = ? AND year = ? AND name = ?",(group_id,year,name))
             row = cur.fetchone()
-            return row["name"]
+            if row:
+                return row["name"]
+            else:
+                raise ValueError("Предмет не был найден")
     
     #--------------------------SCHEDULE----------------------
-    def ensure_schedule(self, group_id:int, subject_id:int, lesson_num:int, classroom:str, date:str):
-        if group_id is None:
-            raise ValueError("Group_id not specified")
-        if subject_id is None:
-            raise ValueError("Subject_id is None")
-        if lesson_num is None:
-            raise ValueError("lesson_num is None")
-        if classroom is None:
-            raise ValueError("Classroom is None")
-        if date is None:
-            raise ValueError("date is None")
+    def ensure_lesson(self,
+                      telegram_id: Optional[int] = None,
+                      vk_id:Optional[int] = None,
+                      year:int = None,
+                      name:str = None,
+                      lesson_num:int = None,
+                      classroom:str = None,
+                      date:str = None) -> None:
+        
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
+        if year is None or name is None or lesson_num is None or classroom is None or date is None:
+            raise ValueError("Один из параметров не указан(год,наименование,номер пары,кабинет или дата)")
         
         with self._connect() as conn:
             cur = conn.cursor()
+            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+            subject_id = self.get_subject_id(telegram_id=telegram_id, vk_id=vk_id, name=name, year=year)
             cur.execute("INSERT INTO schedule (group_id,subject_id,lesson_num,classroom) VALUES (?,?,?,?)",
                         (group_id,subject_id,lesson_num,classroom))
     
-    def delete_schedule(self, date:str, group_id:int):
-        if date is None or group_id is None:
-            raise ValueError("Надо указать все парамметры для удаления рассписания")
+    def delete_schedule(self, 
+                        date:str = None, 
+                        telegram_id: Optional[int] = None, 
+                        vk_id:Optional[int] = None):
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
+        if date is None:
+            raise ValueError("Дата не указана")
         
         with self._connect() as conn:
             cur = conn.cursor()
+            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
             cur.execute("DELETE FROM schedule WHERE group_id = ? AND date = ?",
                         (group_id,date))
-            
             if cur.rowcount == 0:
                 raise ValueError("Расписание на эту дату не найдено")
     
     def get_schedule(self,
-                     group_id:int,
-                     date:str):
-        if group_id is None or date is None:
-            raise ValueError("Нужно указать все парраметры для получения рассписания")
+                    telegram_id: Optional[int] = None, 
+                    vk_id:Optional[int] = None,
+                    date:str = None) -> List[Tuple[int,str,str]]:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
+        if date is None:
+            raise ValueError("Дата не указана")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT subject_id,classroom,lesson_num FROM schedule WHERE group_id = ? AND date = ? ORDER BY lesson_num",
+            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+            cur.execute("""SELECT subjects.name,classroom,lesson_num 
+                        FROM schedule
+                        JOIN subjects ON schedule.subject_id = subjects.id
+                        WHERE schedule.group_id = ? 
+                        AND date = ? 
+                        ORDER BY lesson_num""",
                         (group_id, date))
             rows = cur.fetchall()
             if not rows:
                 raise ValueError("Рассписание на этот день не найдено")
             
-            return [(row["subject_id"],row["lesson_num"],row["classroom"]) for row in rows]
+            return [(row["lesson_num"],row["name"],row["classroom"]) for row in rows]
     
     def get_schedule_id(self,
-                        subject_id:int,
-                        date:str) -> int:
-        if subject_id is None:
-            raise ValueError("Subject id is None")
-        if date is None:
-            raise ValueError("Date is None")
+                        telegram_id:Optional[int] = None,
+                        vk_id:Optional[int] = None,
+                        name:str = None,
+                        year:int = None,
+                        date:str = None) -> int:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
+        if date is None or name is None or year is None:
+            raise ValueError("Один из параметров не указан(дата,наименование или год)")
         
         with self._connect() as conn:
             cur = conn.cursor()
+            subject_id = self.get_subject_id(telegram_id=telegram_id,vk_id=vk_id,
+                                             year=year,name=name)
             cur.execute("SELECT id FROM schedule WHERE subject_id = ? AND date = ?",
                         (subject_id,date))
+            row = cur.fetchone()
+            return row['id']
     
     #-------------------------GRADES----------------------------------
 
@@ -365,6 +417,7 @@ class Database:
             cur = conn.cursor()
             cur.execute("INSERT INTO grades (user_id,schedule_id,grade) VALUES (?,?,?)",
                         (user_id,schedule_id,grade))
+
     def delete_grade(self,
                      user_id:int,
                      schedule_id:int):
@@ -379,3 +432,103 @@ class Database:
                         (user_id, schedule_id)) 
             if cur.rowcount == 0:
                 raise ValueError("Оценка не найдена")
+    def get_grades(self,
+                   subject_name:str = None,
+                   start_date:str = None,
+                   end_date:str = None,
+                   telegram_id:Optional[int] = None,
+                   vk_id:Optional[int]=None) -> List[Tuple[str,int,str]]:
+        
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
+        if start_date is None or end_date is None or subject_name is None:
+            raise ValueError("Один из парраметров не указан, оценки не могут быть получены.")
+        
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT subjects.name, schedule.date, grades.grade
+                FROM grades
+                JOIN schedule ON grades.schedule_id = schedule.id
+                JOIN subjects ON schedule.subject_id = subjects.id
+                JOIN users ON grades.user_id = users.id
+                WHERE (users.telegram_id = ? OR users.vk_id = ?) 
+                        AND subjects.name = ? 
+                        AND schedule.date >= ? 
+                        AND schedule.date <= ?
+                ORDER BY schedule.date
+            """,(telegram_id,vk_id,subject_name,start_date,end_date))
+            rows = cur.fetchall()
+            return [(row["name"],row["grade"],row["date"]) for row in rows]
+    #---------------------------------HOMEWORK------------------------------------------
+
+    def ensure_homework(self,
+                        telegram_id:Optional[int] = None,
+                        vk_id:Optional[int] = None,
+                        name:str = None,
+                        year:int = None,
+                        description:str = None,
+                        attachments:Optional[List[str]] = None,
+                        lessons_left:int = 1) -> None:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
+        if name is None or year is None:
+            raise ValueError("Один из параметров (наименование, год, описание или вложения) не указан")
+        
+        description = description or ""
+        attachments = attachments or []
+
+        if not description and not attachments:
+            raise ValueError("Нужно хотя-бы описание или вложения")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+            subject_id = self.get_subject_id(group_id=group_id,name=name,year=year)
+            attachments_json = json.dumps(attachments)
+            cur.execute("""
+            INSERT INTO homework (group_id,subject_id,description,attachments,lessons_left)
+            VALUES (?,?,?,?,?)
+            """,(group_id,subject_id,description,attachments_json,lessons_left))
+    
+    def delete_homework(self, homework_id:Optional[int] = None) -> None:
+        if homework_id is None:
+            raise ValueError("Укажите id")
+        
+        with self._connect() as conn:
+            conn.execute("DELETE FROM homework WHERE id = ?", (homework_id,))
+    
+    def get_homework(self,
+                     telegram_id:Optional[int] = None,
+                     vk_id: Optional[int] = None,
+                     name:Optional[str] = None,
+                     year:Optional[int] = None) -> List[Tuple[int,str,str,List[str],int]]:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
+        if name is None or year is None:
+            raise ValueError("Не указаны наименование или год")
+        
+        with self._connect() as conn:
+            cur = conn.cursor()
+            group_id = self.get_group_id(telegram_id=telegram_id,vk_id=vk_id)
+            subject_id = self.get_subject_id(group_id=group_id,name=name,year=year)
+            cur.execute("""
+            SELECT homework.id,subjects.name,homework.description,homework.attachments,homework.lessons_left
+            FROM homework
+            JOIN subjects ON homework.subject_id = subjects.id
+            WHERE homework.group_id = ? AND subjects.id = ?
+            """,(group_id,subject_id))
+
+            rows = cur.fetchall()
+            return [
+                (
+                    row['id'],
+                    row['name'],
+                    row['description'],
+                    json.loads(row['attachments']) if row['attachments'] else [],
+                    row['lessons_left']
+                )
+                for row in rows
+            ]
+    
