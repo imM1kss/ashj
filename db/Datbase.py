@@ -237,7 +237,7 @@ class Database:
                 return row["id"]
             else:
                 group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
-                cur.execute("INSERT INTO subjects (name,group_id,year,semester) VALUES (?,?,?,?)", (name, group_id, year, semester))
+                cur.execute("INSERT INTO subjects (name,group_id,year) VALUES (?,?,?,)", (name, group_id, year))
                 return cur.lastrowid
     
     def get_subjects(self,
