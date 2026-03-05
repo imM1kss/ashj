@@ -1,21 +1,21 @@
 while True: 
     try:
+        from logging_config import setup_logging
+        import logging
+
+        setup_logging()
+
         import threading
         import time
         import json
         from datetime import datetime, timedelta
 
         from parser import run_parser
-        from vkbot import run_bot, send_message, get_cab, get_hw
-
-        from logging_config import setup_logging
-        import logging
-
-        setup_logging()
+        from vkbot import run_bot, send_message#, get_cab, get_hw
 
         logger = logging.getLogger("main")
 
-        def parser_pool():
+        def parser_pool() -> None:
             while True:
                 res = run_parser()
                 today = datetime.today()
@@ -61,15 +61,27 @@ while True:
                 logger.info("Parser sleep")
 
                 time.sleep(600)
+        
+        def thread1_safe() -> None:
+            try:
+                run_bot()
+            except Exception:
+                logger.exception("Exception:")
+        
+        def thread2_safe() -> None:
+            try:
+                parser_pool()
+            except Exception:
+                logger.exception("Exception")
 
 
-        bot_thread = threading.Thread(target=run_bot, daemon=True)
-        parser_thread = threading.Thread(target=parser_pool, daemon=True)
+        bot_thread = threading.Thread(target=thread1_safe, daemon=True)
+        # parser_thread = threading.Thread(target=parser_pool, daemon=True)
 
         bot_thread.start()
-        parser_thread.start()
+        # parser_thread.start()
 
         bot_thread.join()
-        parser_thread.join()
+        # parser_thread.join()
     except Exception:
         logger.exception("Exception:")

@@ -134,20 +134,26 @@ class Database:
     
     def is_admin(self,
                 telegram_id:Optional[int] = None,
-                vk_id:Optional[int] = None,
-                user_id: Optional[int] = None) -> bool:
-        if telegram_id is None and vk_id is None and user_id is None:
+                vk_id:Optional[int] = None,) -> bool:
+        if telegram_id is None and vk_id is None:
             raise ValueError("Укажите хотя-бы какое-то id")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT role FROM users WHERE telegram_id = ? OR vk_id = ? OR user_id = ?",
-                        (telegram_id, vk_id, user_id))
+            cur.execute("SELECT role FROM users WHERE telegram_id = ? OR vk_id = ?",
+                        (telegram_id, vk_id))
             row = cur.fetchone()
             if row:
                 if row['role'] == "admin":
                     return True 
             return False
+    
+    def get_admins(self) -> List[int]:
+
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM users WHERE role = ?",("admin",))
+            return [row['id'] for row in cur.fetchall()]
 
     
     #------------------------------GROUPS----------------------------------
