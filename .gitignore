@@ -21,3 +21,4 @@ __pycache__/
 *.docx
 
 data.json
+test.py
