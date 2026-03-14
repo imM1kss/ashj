@@ -1,0 +1,46 @@
+{
+    "add":{
+        "text":"добавить",
+        "admin": false
+    },
+    "delete":{
+        "text":"удалить",
+        "admin": false
+    },
+    "edit":{
+        "text":"изменить",
+        "admin":false
+    },
+    "create_group":{
+        "text":"создать группу",
+        "admin":true
+    },
+    "join_group":{
+        "text":"привяжи группу",
+        "admin": true
+    },
+    "schedule":{
+        "text":"расписание",
+        "admin":false
+    },
+    "homework":{
+        "text":"дз",
+        "admin":false
+    },
+    "sup":{
+        "text":"дополнить",
+        "admin":false
+    },
+    "whoami":{
+        "text":"кто я",
+        "admin":false
+    },
+    "logs":{
+        "text":"логи",
+        "admin": true
+    },
+    "join_code":{
+        "text":"код привязки",
+        "admin":true
+    }
+}

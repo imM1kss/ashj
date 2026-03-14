@@ -1,6 +1,6 @@
 while True: 
     try:
-        from logging_config import setup_logging
+        from logs.logging_config import setup_logging
         import logging
 
         setup_logging()
@@ -10,8 +10,8 @@ while True:
         import json
         from datetime import datetime, timedelta
 
-        from parser import run_parser
-        from vkbot import run_bot, send_message#, get_cab, get_hw
+        from parser.parser import run_parser
+        from vk.vkbot import run_bot, send_message#, get_cab, get_hw
 
         logger = logging.getLogger("main")
 

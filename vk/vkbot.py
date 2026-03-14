@@ -16,7 +16,7 @@ import json
 import re
 from dotenv import load_dotenv
 from typing import List, Tuple, Optional
-from db.Datbase import Database
+from data.Datbase import Database
 from rapidfuzz import process
 
 
