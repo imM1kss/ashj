@@ -3,7 +3,7 @@ from typing import List, Tuple, Optional
 import json
 
 class Database:
-    def __init__(self, path: str = "data.db"):
+    def __init__(self, path: str = "database.db"):
         self.path = path
         self._init_db()
     

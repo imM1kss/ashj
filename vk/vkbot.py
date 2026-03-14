@@ -1,32 +1,25 @@
 
 import logging
-
-logger = logging.getLogger("vk bot")
-
-    #импортировал все методы для ВК
+#import methods from VK API
 from vk_api import VkApi
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from vk_api.upload import VkUpload
 
-#импортировал остальные методы
+#others imports
 import random as rand
 import os
-import json
 import re
 from dotenv import load_dotenv
 from typing import List, Tuple, Optional
 from data.Datbase import Database
 from rapidfuzz import process
 
-
+#init logger
+logger = logging.getLogger("vk bot")
 
 #загружаю переменные среды
 load_dotenv()
-
-# #открываю data.json
-# with open("data.json", 'r', encoding="utf-8") as file:
-#     data = json.load(file)
 
 #постоянные значения
 TOKEN = os.getenv("VK_token")
@@ -36,12 +29,12 @@ GROUP_ID = os.getenv("group_id")
 #переменные для пользователей
 users = {}
 
-#инициализация api
+#init vk api
 vk_session = VkApi(token = TOKEN)
 vk_api = vk_session.get_api()
 upload = VkUpload(vk_session)
 
-#инициализация отслеживания событий для бота
+#инициализация отслеживания событий
 longpoll = VkBotLongPoll(vk_session, GROUP_ID)
 
 # #динамическая установка значения в словаре
@@ -262,43 +255,43 @@ def send_message(peer_id:Optional[int] = None,
 #     match = re.search(r'\d+', line)
 #     return match.group() if match else line
 
-def get_action_by_name(name:Optional[str] = None) -> Optional[str]:
+# def get_action_by_name(name:Optional[str] = None) -> Optional[str]:
 
-    action_list = ["добавить","удалить","расписание","создай группу","кто я"]
+#     action_list = ["добавить","удалить","расписание","создай группу","кто я"]
 
-    actions = {"добавить":"add","удалить":"delete","расписание":"schedule",
-               "создай группу":"create_group","кто я":"who_am_i"}
+#     actions = {"добавить":"add","удалить":"delete","расписание":"schedule",
+#                "создай группу":"create_group","кто я":"who_am_i"}
 
-    action_match = process.extractOne(name,action_list)
+#     action_match = process.extractOne(name,action_list)
 
-    if not action_match or action_match[1] < 65:
-        return None
-    return actions[action_match[0]]
+#     if not action_match or action_match[1] < 65:
+#         return None
+#     return actions[action_match[0]]
 
-def get_subjects_by_name(name:Optional[str] = None) -> Optional[int]:
-    subjects_names = ["математика","русский","литература","физ-ра"]
-    subjects = {"математика":0,"русский":1,"литература":2,"физ-ра":3}
+# def get_subjects_by_name(name:Optional[str] = None) -> Optional[int]:
+#     subjects_names = ["математика","русский","литература","физ-ра"]
+#     subjects = {"математика":0,"русский":1,"литература":2,"физ-ра":3}
 
-    subject_match = process.extractOne(name,subjects_names)
-    if not subject_match or subject_match[1] < 65:
-        return None
-    return subjects[subject_match[0]]
+#     subject_match = process.extractOne(name,subjects_names)
+#     if not subject_match or subject_match[1] < 65:
+#         return None
+#     return subjects[subject_match[0]]
 
-def get_action(command: Optional[str] = None) -> List:
-    command = command.strip().lower()
-    # убираем имя бота
-    cmd_text = command.split(maxsplit=1)[1] if len(command.split()) > 1 else ""
+# def get_action(command: Optional[str] = None) -> List:
+#     command = command.strip().lower()
+#     # убираем имя бота
+#     cmd_text = command.split(maxsplit=1)[1] if len(command.split()) > 1 else ""
     
-    # пробуем найти действие
-    action = get_action_by_name(cmd_text)
+#     # пробуем найти действие
+#     action = get_action_by_name(cmd_text)
     
-    # ищем предмет, если есть "дз по"
-    if "дз по" in cmd_text:
-        subject_text = cmd_text.split("дз по",1)[1].strip()
-        subject = get_subjects_by_name(subject_text)
-        return[action,subject]
+#     # ищем предмет, если есть "дз по"
+#     if "дз по" in cmd_text:
+#         subject_text = cmd_text.split("дз по",1)[1].strip()
+#         subject = get_subjects_by_name(subject_text)
+#         return[action,subject]
 
-    return [action]
+#     return [action]
 
 # #запуск бота
 def run_bot() -> None:
