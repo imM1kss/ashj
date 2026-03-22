@@ -1,6 +1,9 @@
 import sqlite3
 from typing import List, Tuple, Optional
 import json
+import random
+import datetime
+from datetime import timedelta
 
 class Database:
     def __init__(self, path: str = "database.db"):
@@ -74,6 +77,14 @@ class Database:
                 lessons_left INTEGER NOT NULL DEFAULT 1 CHECK(lessons_left >= 0),
                                
                 FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
+                FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS group_link (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER NOT NULL UNIQUE,
+                code TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                               
                 FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
             );
             """)
@@ -537,4 +548,16 @@ class Database:
                 )
                 for row in rows
             ]
-    
+
+ #----------------------GROUP_LINK--------------------------
+    def ensure_link(self,
+                    vk_id: Optional[int] = None,
+                    telegram_id: Optional[int] = None,
+                    ) -> bool:
+        if telegram_id is None and vk_id is None:
+            raise ValueError("Нужен хотя-бы вк или тг")
+
+        with self._connect() as conn:
+            cur = conn.cursor()
+            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+            
