@@ -4,6 +4,8 @@ import json
 import random
 import datetime
 from datetime import timedelta
+import secrets
+import string
 
 class Database:
     def __init__(self, path: str = "database.db"):
@@ -84,6 +86,7 @@ class Database:
                 group_id INTEGER NOT NULL UNIQUE,
                 code TEXT NOT NULL UNIQUE,
                 created_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL,
                                
                 FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
             );
@@ -550,14 +553,75 @@ class Database:
             ]
 
  #----------------------GROUP_LINK--------------------------
+
     def ensure_link(self,
                     vk_id: Optional[int] = None,
                     telegram_id: Optional[int] = None,
-                    ) -> bool:
+                    ) -> str:
         if telegram_id is None and vk_id is None:
             raise ValueError("Нужен хотя-бы вк или тг")
+        
+        group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+        now = datetime.now()
+        ATTEMPTS = 3
+
 
         with self._connect() as conn:
             cur = conn.cursor()
-            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
             
+
+            cur.execute("SELECT created_at FROM group_link WHERE group_id = ?",
+                        (group_id,))
+            if cur.fetchone() is not None:
+                created_at = cur.fetchone()
+                dt = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+                if now - dt >= timedelta(minutes=10):
+                    alphabet = string.ascii_letters + string.digits
+                    code = ''.join(secrets.choice(alphabet) for _ in range(6))
+                    time = now.strftime("%Y-%m-%d %H:%M:%S")
+                    cur.execute("INSERT INTO group_link (group_id,code,created_at) VALUES (?,?,?)",
+                                (group_id,code,time,ATTEMPTS))
+                    return code
+                else:
+                    return None
+            else:
+                alphabet = string.ascii_letters + string.digits
+                code = ''.join(secrets.choice(alphabet) for _ in range(6))
+                time = now.strftime("%Y-%m-%d %H:%M:%S")
+                cur.execute("INSERT INTO group_link (group_id,code,created_at,attempts) VALUES (?,?,?,?)",
+                            (group_id,code,time,ATTEMPTS))
+                return code
+    
+    def chech_code(self,
+                   vk_id:Optional[int] = None,
+                   telegram_id:Optional[int] = None,
+                   code:Optional[str] = None) -> bool:
+        if (telegram_id is None and vk_id is None) or (code is None):
+            raise ValueError("code is not definded or (tg and vk) is None")
+        
+        group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+        now = datetime.now()
+
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id, code, created_at, attempts FROM group_link WHERE group_id = ?",
+                        (group_id,))
+            row = cur.fetchone()
+            if row is not None:
+                dt = datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S")
+                if now - dt >= timedelta(minutes=10):
+                    cur.execute("DELETE FROM group_link WHERE id = ?", (row["id"],))
+                    return False
+                else:
+                    if code == row["code"]:
+                        return True
+                    else:
+                        attempts = row["attempts"] - 1
+                        if attempts <= 0:
+                            cur.execute("DELETE FROM group_link WHERE id = ?", (row["id"],))
+                        else:
+                            cur.execute("UPDATE group_link SET attempts = ? WHERE id = ?", (row["id"],))
+                        return False
+            else:
+                return False
+        
