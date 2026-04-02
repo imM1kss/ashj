@@ -182,17 +182,24 @@ class Database:
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("""
-                SELECT id,telegram_id,vk_id FROM groups
-                WHERE telegram_id = ? OR vk_id = ?
-            """, (telegram_id, vk_id))
+                SELECT id,telegram_id,vk_id,name FROM groups
+                WHERE telegram_id = ? OR vk_id = ? OR name = ?
+            """, (telegram_id, vk_id,name))
             row = cur.fetchone()
 
             if row:
                 group_id = row["id"]
 
+                if vk_id is not None and row["vk_id"] is not None:
+                    return None
+                if telegram_id is not None and row["telegram_id"] is not None:
+                    return None
+                if name is not None and row["name"] is not None:
+                    return None
+
                 if telegram_id is not None and not row["telegram_id"]:
                     cur.execute("UPDATE groups SET telegram_id = ? WHERE id = ?", (telegram_id, group_id))
-                elif vk_id is not None and not row["vk_id"]:
+                if vk_id is not None and not row["vk_id"]:
                     cur.execute("UPDATE groups SET vk_id = ? WHERE id = ?", (vk_id, group_id))
             else:
                 if name is None:

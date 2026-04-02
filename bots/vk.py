@@ -4,11 +4,12 @@ import dotenv
 import os
 import random
 import json
+import re
 from vk.vk_keyboard import VkKeyboard
 
 from aiovk import TokenSession, API
 from aiovk.longpoll import BotsLongPoll
-from data.Datbase import Database
+from services.Datbase import Database
 from typing import Optional,List,Tuple,Dict
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -26,32 +27,33 @@ def command_hendler(command_text:Optional[str] = None) -> Tuple(str,bool):
     else:
         command_text = command_text.lower()
     
-    print(command_text)
-    
     current_file = Path(__file__).resolve()
 
     json_path = current_file.parent.parent / "data" / "commands.json"
     
     with open(json_path, 'r', encoding="utf-8") as file:
         commands = json.load(file)
-    
-    print(commands)
 
     best_ratio = 0
     best_match = None
 
     for cmd_name, cmd_info in commands.items():
         cmd_text = cmd_info['text'].lower()
-        print(cmd_text)
         ratio = SequenceMatcher(None,command_text,cmd_text).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
             best_match = (cmd_name,cmd_info["admin"])
-    print(best_ratio)
     if best_ratio > 0.8:
         return best_match
     else:
         return None
+    
+def convert_group_name(group_name:Optional[str] = None) -> str:
+    if group_name is None:
+        return None
+    
+    result = re.sub(r'\D', '', group_name)
+    return result
     
 
 
@@ -103,15 +105,40 @@ async def main_vk() -> None:
                 #filter: if mention bot -> send_message else -> None
                 if ("@schedly_test" in message_text) or ("@SchedlyBot" in message_text):
                     command = message_text.split(" ", 1)[1]
-                    command_text = command.split(":", 1)[0]
+                    command_parts = command.split(":", 1)
+                    
+                    command_text = command_parts[0]
+                    command_args = ""
+                    if len(command_parts) > 1:
+                        command_args = command_parts[1]
+
+                    cmd = command_hendler(command_text=command_text)
                     data = Database()
+
+                    if cmd:
+                        for cmd_name,cmd_admin in cmd:
+                            if data.is_admin(vk_id=user_id) >=  cmd_admin:
+                                if cmd_name == "create_group" and command_args:
+                                    if data.ensure_group(vk_id=peer_id,
+                                                         name=convert_group_name(group_name=command_args)):
+                                        await send_message(id=peer_id,
+                                                           message="Группа успешно создана!")
+                                    else:
+                                        await send_message(id=peer_id,
+                                                           message="Извините, но похоже, что группа была уже создана, до вас!")
+
 
 
 
 
 #testing if run directly
 if __name__ == "__main__":
-    try:
-        asyncio.run(main_vk())
-    except KeyboardInterrupt:
-        print("Бот выключен")
+    while True:
+        try:
+            asyncio.run(main_vk())
+        except KeyboardInterrupt:
+            print("Бот выключен")
+            break
+        except asyncio.TimeoutError:
+            print("timeout")
+            continue
