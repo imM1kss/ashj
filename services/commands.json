@@ -3,10 +3,6 @@
         "text":"удалить",
         "admin": false
     },
-    "create_group":{
-        "text":"создать группу",
-        "admin":true
-    },
     "join_group":{
         "text":"привязать группу",
         "admin": true

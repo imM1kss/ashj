@@ -7,7 +7,7 @@ from datetime import timedelta
 import secrets
 import string
 
-class Database:
+class DataBase:
     def __init__(self, path: str = "database.db"):
         self.path = path
         self._init_db()
@@ -426,6 +426,16 @@ class Database:
                         (subject_id,date))
             row = cur.fetchone()
             return row['id']
+    
+    def get_last_schedule_date(self) -> str:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT date FROM schedule ORDER BY id DESC LIMIT 1 ")
+            row = cur.fetchone()
+            if row is not None:
+                return row["date"]
+            return None
+
     
     #-------------------------GRADES----------------------------------
 
