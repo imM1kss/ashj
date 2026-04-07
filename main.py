@@ -34,20 +34,20 @@ while True:
                         text += f"\n({row[0][:1]}) {row[1]} [{cab}]"
                     text += f"\n{line}"
 
-                    hw_text, att = get_hw()
-                    if hw_text == "":
-                        if att:
-                            hw_text = "\nТекст не добавили, но есть вложение."
-                        else:
-                            hw_text = "\nНе задано"
+                    # hw_text, att = get_hw()
+                    # if hw_text == "":
+                    #     if att:
+                    #         hw_text = "\nТекст не добавили, но есть вложение."
+                    #     else:
+                    #         hw_text = "\nНе задано"
                     
-                    text += hw_text
+                    # text += hw_text
                     
                     send_message(msg = text)
 
                     #высылаем вложения
-                    if att:
-                        send_message(msg = "Вложение к дз", attachment=att)
+                    # if att:
+                    #     send_message(msg = "Вложение к дз", attachment=att)
 
                 time.sleep(600)
 

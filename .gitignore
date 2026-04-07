@@ -17,9 +17,10 @@ __pycache__/
 # Логи и временные файлы
 *.log
 *.sqlite3
+*.db
+tests/
 
 *.docx
-
 data.json
 
 test.py
