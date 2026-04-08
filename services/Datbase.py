@@ -1,7 +1,6 @@
 import sqlite3
 from typing import List, Tuple, Optional
 import json
-import random
 import datetime
 from datetime import timedelta
 import secrets
@@ -43,9 +42,8 @@ class DataBase:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 group_id INTEGER NOT NULL,
-                year INTEGER NOT NULL,
                 
-                UNIQUE (group_id, name, year),
+                UNIQUE (group_id, name),
                 FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS schedule (
@@ -238,33 +236,31 @@ class DataBase:
     
     #------------------------------SUBJECTS--------------------------------
     def ensure_subject(self,
-                       name: str = None,
-                       year:int = None,
+                       name:Optional[str] = None,
                        telegram_id: Optional[int] = None,
-                       vk_id:Optional[int] = None) -> int:
+                       vk_id:Optional[int] = None,
+                       group_id:Optional[int] = None) -> int:
         if name is None:
             raise ValueError("Name not specified")
-        if telegram_id is None and vk_id is None:
+        if telegram_id is None and vk_id is None and group_id is None:
             raise ValueError("Нужно зотя-бы вк или тг")
-        if year is None:
-            raise ValueError("Year not specified")
+        
+        if group_id is None:
+            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
 
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("""SELECT id 
-                        FROM subjects
-                        JOIN groups ON subjects.group_id = groups.id 
-                        WHERE (groups.telegram_id = ? OR groups.vk_id = ?)
-                        AND subjects.name = ? 
-                        AND year = ? """,
-                        (telegram_id,vk_id,name,year))
+                        FROM subjects 
+                        WHERE group_id = ?
+                        AND name = ? """,
+                        (group_id,name,))
             row = cur.fetchone()
 
             if row:
                 return row["id"]
             else:
-                group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
-                cur.execute("INSERT INTO subjects (name,group_id,year) VALUES (?,?,?,)", (name, group_id, year))
+                cur.execute("INSERT INTO subjects (name,group_id) VALUES (?,?)", (name, group_id))
                 return cur.lastrowid
     
     def get_subjects(self,
@@ -345,25 +341,24 @@ class DataBase:
     
     #--------------------------SCHEDULE----------------------
     def ensure_lesson(self,
-                      telegram_id: Optional[int] = None,
-                      vk_id:Optional[int] = None,
-                      year:int = None,
-                      name:str = None,
+                      group_name:Optional[str] = None,
+                      subject_name:str = None,
                       lesson_num:int = None,
                       classroom:str = None,
                       date:str = None) -> None:
         
-        if telegram_id is None and vk_id is None:
-            raise ValueError("Нужен хотя-бы вк или тг")
-        if year is None or name is None or lesson_num is None or classroom is None or date is None:
-            raise ValueError("Один из параметров не указан(год,наименование,номер пары,кабинет или дата)")
+        if group_name is None:
+            raise ValueError("Нужно имя группы")
+        if subject_name is None or lesson_num is None or classroom is None or date is None:
+            raise ValueError("Один из параметров не указан(наименование,номер пары,кабинет или дата)")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
-            subject_id = self.get_subject_id(telegram_id=telegram_id, vk_id=vk_id, name=name, year=year)
-            cur.execute("INSERT INTO schedule (group_id,subject_id,lesson_num,classroom) VALUES (?,?,?,?)",
-                        (group_id,subject_id,lesson_num,classroom))
+            group_id = self.get_group_id(name=group_name)
+            subject_id = self.ensure_subject(name=subject_name,
+                                             group_id=group_id)
+            cur.execute("INSERT INTO schedule (group_id,subject_id,lesson_num,classroom,date) VALUES (?,?,?,?,?)",
+                        (group_id,subject_id,lesson_num,classroom,date))
     
     def delete_schedule(self, 
                         date:str = None, 
