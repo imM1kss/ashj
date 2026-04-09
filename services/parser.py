@@ -23,20 +23,86 @@ load_dotenv()
 TOKEN = os.getenv('access_token')
 GROUP_ID = os.getenv('schedule_id')
 
+
+class VkGroup:
+    global TOKEN, GROUP_ID
+
+    def __init__(self, token=TOKEN, group_id=GROUP_ID):
+        self.token = token
+        self.group_id = group_id
+    
+    def _connect_wall(self) -> Dict:
+        vk_session = VkApi(token=self.token)
+        vk_api = vk_session.get_api()
+
+        group_id = vk_api.groups.getById(group_id=self.group_id)[0]["id"]
+
+        #get 5 last posts from wall
+        wall = vk_api.wall.get(
+            owner_id=-group_id,
+            count=5
+        )
+
+        return wall
+    
+    def get_new_date(self) -> str:
+        wall = self._connect_wall()
+
+        for post in wall.get("items", []):
+            for att in post.get("attachments", []):
+                att_type = att.get("type")
+                if att_type == "doc":
+                    att_title = att.get("doc", {}).get("title")
+                    date = text2date(att_title)
+                    return date
+        return ""
+    
+    def get_file_name(self) -> str:
+        wall = self._connect_wall()
+
+        for post in wall.get("items", []):
+            for att in post.get("attachments", []):
+                att_type = att.get("type")
+                if att_type == "doc":
+                    att_title = att.get("doc", {}).get("title")
+                    return att_title
+        return ""
+
+
+    
+    def get_link(self) -> str:
+        wall = self._connect_wall()
+
+        file_name = self.get_file_name()
+
+        for post in wall.get("items", []):
+            for att in post.get("attachments", []):
+                att_type = att.get("type")
+                if att_type == "doc":
+                    att_title = att.get("doc", {}).get("title")
+                    if att_title == file_name:
+                        logger.info("Parser get download link %s", att["doc"]["url"])
+                        att_url = att.get("doc", {}).get("url")
+                        return att_url
+        
+        return ""
+
+
 #main function
 def run_parser() -> bool:
     try:
         logger.info("Parser start")
-        #DataBase init
+        #Classes
         data = DataBase()
+        group = VkGroup()
         #get dates
         last_date = data.get_last_schedule_date()
         last_date = last_date or ""
-        new_date = get_next_day()
+        new_date = group.get_new_date()
 
 
         if new_date > last_date:
-            link = get_vk_doc_link()
+            link = group.get_link()
             if download_file(link):
                 schedule = get_schedule()
                 if schedule:
@@ -57,67 +123,17 @@ def convert_group_name(group_name:Optional[str] = None) -> str:
         return None
     
     result = re.sub(r'\D', '', group_name)
-    return result
+    return result 
 
-#function for get str with next day date
-def get_file_name() -> str:
-    today = datetime.today() #get current date
-
-    #if today is Sut -> Mon(+2)
-    if today.weekday() == 5:
-        next_day = today + timedelta(days=2)
-    #else if today not Sut -> +1
-    else:
-        next_day = today + timedelta(days=1)
-
-    ndd = next_day.strftime("%d.%m.%Y")
-    file_name = f"{ndd}.docx"
-
-    return file_name
-
-def get_next_day() -> str:
-    today = datetime.today() #get current date
-
-    #if today is Sut -> Mon(+2)
-    if today.weekday() == 5:
-        next_day = today + timedelta(days=2)
-    #else if today not Sut -> +1
-    else:
-        next_day = today + timedelta(days=1)
-
-    new_date = next_day.strftime("%Y-%m-%d")
-
-    return new_date
-
-#get doc's link from vk group
-def get_vk_doc_link() -> str:
-    global TOKEN, GROUP_ID
-    #vk session init
-    vk_session = VkApi(token=TOKEN)
-    vk_api = vk_session.get_api()
-
-    group_id = vk_api.groups.getById(group_id=GROUP_ID)[0]["id"]
-
-    #get 5 last posts from wall
-    wall = vk_api.wall.get(
-        owner_id=-group_id,
-        count=5
-    )
-
-    #get file_name
-    file_name = get_file_name()
-
-    for post in wall.get("items", []):
-        for att in post.get("attachments", []):
-            att_type = att.get("type")
-            if att_type == "doc":
-                att_title = att.get("doc", {}).get("title")
-                if att_title == file_name:
-                    logger.info("Parser get download link %s", att["doc"]["url"])
-                    att_url = att.get("doc", {}).get("url")
-                    return att_url
+def text2date(text:Optional[str] = None) -> str:
+    if text is None:
+        raise ValueError("Text is None")
     
-    return None
+    date_str = text.replace(".docx", "")
+    dt = datetime.strptime(date_str, "%d.%m.%Y")
+    date = dt.strftime("%Y-%m-%d")
+
+    return date
 
 def download_file(link:Optional[str] = None) -> bool:
     if link is None:
