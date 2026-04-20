@@ -11,76 +11,61 @@ while True:
         from datetime import datetime, timedelta
 
         from services.parser import run_parser
+        from services.config_vk import send_message
+        from services.Datbase import DataBase
+        import asyncio
+        import random
+        import re
 
         logger = logging.getLogger("main")
+        data = DataBase()
 
-        # def parser_pool() -> None:
-        #     while True:
-        #         res = run_parser()
-        #         today = datetime.today()
+        def format_schedule(schedule):
+            # Заголовок (можно добавить дату)
+            last_date = data.get_last_schedule_date()
+            now = datetime.strptime(last_date, "%Y-%m-%d")
+            days = ["ПОНЕДЕЛЬНИК", "ВТОРНИК", "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА", "СУББОТА", "ВОСКРЕСЕНЬЕ"]
+            date = f"{days[now.weekday()]} ({now.strftime("%d.%m")})"
+            lines = [f"Расписание на {date}", "---------------------"]
+            ln = []
+            
+            for lesson, subject, room in schedule:
+                l = re.sub(r'\D', '', lesson)
+                ln.append(l)
+                s = subject.capitalize()
+                r = "".join(c for c in room if c.isdigit()) if any(c.isdigit() for c in room) else room
+                lines.append(f"({l})  {s}  [{r}]")
 
-        #         if today.weekday() == 5:  
-        #             next_day = today + timedelta(days=2)
-        #         elif today.weekday() == 6:
-        #             next_day = today + timedelta(days=1)
-        #         else:
-        #             next_day = today + timedelta(days=1)
+            lines.append("---------------------")
 
-        #         ndd = next_day.strftime("%d.%m")
-
-        #         if res:
-        #             with open('data.json', 'r', encoding='utf-8') as file:
-        #                 data = json.load(file)
-
-        #             text = f"Расписание({ndd}):\n"
-        #             line = "-" *30
-        #             text += "".join(line)
-        #             for row in data['last_schedule']:
-        #                 cab = get_cab(row[2])
-        #                 text += f"\n({row[0][:1]}) {row[1]} [{cab}]"
-        #             text += f"\n{line}"
-
-        #             hw_text, att = get_hw()
-        #             if hw_text == "":
-        #                 if att:
-        #                     hw_text = "\nТекст не добавили, но есть вложение."
-        #                 else:
-        #                     hw_text = "\nНе задано"
-                    
-        #             text += hw_text
-                    
-        #             send_message(msg = text)
-        #             logger.info("Bot send schedule and home work:\n%s", text)
-
-        #             #высылаем вложения
-        #             if att:
-        #                 send_message(msg = "Вложение к дз", attachment=att)
-        #                 logger.info("Bot send attachments")
+            if min(ln) > "1":
+                lines.append(f"*@all ВНИМАНИЕ! Завтра к {min(ln)} паре")
                 
-        #         logger.info("Parser sleep")
+            # Объединяем все строки с переносом
+            return "\n".join(lines).strip()
 
-        #         time.sleep(600)
+        def parser_pool():
+            try:
+                result = run_parser()
+                if result:
+                    groups = data.get_group_names()
+                    for name in groups:
+                        date = data.get_last_schedule_date()
+                        schedule = data.get_schedule(group_name=name, date=date)
+                        vk_id = data.get_vk_id(group_name=name)
+                        text = format_schedule(schedule=schedule)
+                        
+                        asyncio.run(send_message(peer_id=vk_id,text=text))
+                        time.sleep(600)
+            except Exception:
+                logger.exception("Exception")
+
+        thread_bot = threading.Thread(target=parser_pool, daemon=True)
+
+        thread_bot.start()
+
+        thread_bot.join()
+
         
-        # def thread1_safe() -> None:
-        #     try:
-        #         run_bot()
-        #     except Exception:
-        #         logger.exception("Exception:")
-        
-        # def thread2_safe() -> None:
-        #     try:
-        #         parser_pool()
-        #     except Exception:
-        #         logger.exception("Exception")
-
-
-        # bot_thread = threading.Thread(target=thread1_safe, daemon=True)
-        # # parser_thread = threading.Thread(target=parser_pool, daemon=True)
-
-        # bot_thread.start()
-        # # parser_thread.start()
-
-        # bot_thread.join()
-        # # parser_thread.join()
     except Exception:
         logger.exception("Exception:")
