@@ -195,7 +195,7 @@ def get_schedule() -> List:
     return schedule
 
 
-def clean(items):
+def clean(items:List) -> List:
     result = []
     for item in items:
         if item and item not in result:

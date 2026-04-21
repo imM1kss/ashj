@@ -166,6 +166,20 @@ class DataBase:
             cur = conn.cursor()
             cur.execute("SELECT id FROM users WHERE role = ?",("admin",))
             return [row['id'] for row in cur.fetchall()]
+    
+    def get_user_vk_id(self, user_id: Optional[int] = None) -> int:
+        if user_id is None:
+            raise ValueError("User_id is None")
+
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT vk_id FROM users WHERE id = ?",
+                        (user_id,))
+            row = cur.fetchone()
+            if row:
+                return row["vk_id"]
+            else:
+                return None
 
     
     #------------------------------GROUPS----------------------------------
@@ -225,7 +239,7 @@ class DataBase:
                 """, (telegram_id, vk_id, name))
             row = cur.fetchone()
             if not row:
-                raise ValueError("Группа не найдена")
+                return None
             return row["id"]
     
     def get_group_names(self) -> List[str]:
