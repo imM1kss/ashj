@@ -9,11 +9,26 @@ from docx import Document
 from vkbottle import Keyboard, KeyboardButtonColor, Callback, GroupEventType
 from math import ceil
 from random import randint
+from dotenv import load_dotenv
+from os import getenv
+import json
+from datetime import datetime
+from services.logging_config import setup_logging
+import logging
 
 data = DataBase()
+load_dotenv()
+setup_logging()
+
+logger = logging.getLogger('vk_bot')
 
 #const
 ITEMS_PER_PAGE = 6
+GROUP_ID = getenv('schedule_id')
+
+if not data.get_admins():
+    vk_id = getenv("owner_vk_id")
+    data.ensure_user(vk_id=vk_id,role="admin",full_name="Вячеслав М")
 
 def convert_group_name(group_name:str = None) -> str:
     if group_name is None:
@@ -119,6 +134,9 @@ def confirm_adm_kb(name:str, peer_id:int) -> Keyboard:
 
 @bot.on.chat_message(func=lambda m: m.text and "бот" in m.text.lower())
 async def start_message(message: Message):
+
+    logger.info("Бот получил команду: '%s' от пользователя %s в группе %s", message.text,
+                 message.from_id,message.peer_id)
     
     if "привяжи" in message.text.lower():
         keyboard = join_kb(0)
@@ -140,6 +158,9 @@ async def handle_keyboard_events(event: MessageEvent):
     user_link = f"[id{user_id}|{user.first_name}{user.last_name}]"
 
     peer_id = event.object.peer_id
+
+    logger.info("Пользователь %s нажал кнопку %s в чате %s",
+                user_id, payload.get("act"), peer_id)
     
     if not payload:
         return
@@ -203,6 +224,31 @@ async def handle_keyboard_events(event: MessageEvent):
             delete_for_all=True,
             cmids=[event.object.conversation_message_id]
         )
+    elif payload.get("act") == "accepted":
+        pl_peer_id = payload.get("peer_id")
+        name = payload.get("name")
+
+        if data.ensure_group(name=name, vk_id=pl_peer_id):
+            await bot.api.messages.send(
+                peer_id=pl_peer_id,
+                random_id = randint(0,100000),
+                message=f"Ваша заявка одобрена: чат был успешно привязан к группе {name}!"
+            )
+        else:
+            await bot.api.messages.send(peer_id=pl_peer_id,
+                                        random_id=randint(0,10000),
+                                        message=f"Ваша чат по каким-то причинам не может быть привязана! Я уже сообщил Админу, подождите!")
+            admins = data.get_admins()
+            for Id in admins:
+                vk_id = data.get_user_vk_id(user_id=Id)
+
+                if vk_id:
+                    await bot.api.messages.send(user_id=vk_id,
+                                                random_id = randint(0,100000),
+                                                message=f"Какие-то неполадки: не удалось привязать чат {pl_peer_id} к {name}")
+            await bot.api.messages.delete(peer_id=peer_id,
+                                          delete_for_all=True,cmids=[event.object.conversation_message_id])
+
 
 
 
@@ -216,7 +262,65 @@ async def handle_keyboard_events(event: MessageEvent):
         )
 
         await event.show_snackbar("Меню закрыто")
-        
-        
 
-bot.run_forever()
+async def check_parser() -> None:
+    logger.info("Проверка парсера началась")
+    sch_date = data.get_last_schedule_date()
+    
+    with open("last_date.json",'r',encoding="utf-8") as f:
+        file_data = json.load(f)
+    
+    send_date = file_data.get("vk")
+    
+    if sch_date > send_date:
+        file_data["vk"] = sch_date
+        with open("last_date.json",'w',encoding="utf-8") as f:
+            json.dump(file_data, f, indent=4)
+        for name in data.get_group_names():
+            schedule = data.get_schedule(group_name=name,
+                                         date=sch_date)
+            vk_id = data.get_vk_id(group_name=name)
+            
+            now = datetime.strptime(sch_date, "%Y-%m-%d")
+            days = ["ПОНЕДЕЛЬНИК", "ВТОРНИК", "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА", "СУББОТА", "ВОСКРЕСЕНЬЕ"]
+            date = f"{days[now.weekday()]} ({now.strftime("%d.%m")})"
+            lines = [f"Расписание на {date}", "---------------------"]
+            ln = []
+            
+            for lesson, subject, room in schedule:
+                l = re.sub(r'\D', '', lesson)
+                ln.append(l)
+                s = subject.capitalize()
+                r = "".join(c for c in room if c.isdigit()) if any(c.isdigit() for c in room) else room
+                lines.append(f"({l})  {s}  [{r}]")
+
+            lines.append("---------------------")
+
+            if min(ln) > "1":
+                lines.append(f"*@all ВНИМАНИЕ! Завтра к {min(ln)} паре")
+            
+            text = "\n".join(lines).strip()
+            logger.info("Бот отправил расписание группы %s в чат %s", name, vk_id)
+
+            await bot.api.messages.send(
+                peer_id=vk_id,
+                random_id=randint(0,10000),
+                message=text
+            )
+
+
+
+
+
+
+async def periodic_task():
+    while True:
+        await check_parser()
+        logger.info("Парсер проверен, я спать на 10 минут")
+        await asyncio.sleep(600)
+
+
+
+if __name__ == "__main__":
+    bot.loop_wrapper.add_task(periodic_task())
+    bot.run_forever()

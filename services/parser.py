@@ -9,11 +9,14 @@ import json
 from docx import Document
 from vk_api import VkApi
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime
 from services.Datbase import DataBase
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
+from time import sleep
+from services.logging_config import setup_logging
 
 #logger init
+setup_logging()
 logger = logging.getLogger("parser")
 
 #load values from .env
@@ -25,17 +28,19 @@ GROUP_ID = os.getenv('schedule_id')
 
 
 class VkGroup:
-    global TOKEN, GROUP_ID
+    global TOKEN, GROUP_ID #global values
 
+    #init constructor
     def __init__(self, token=TOKEN, group_id=GROUP_ID):
         self.token = token
         self.group_id = group_id
     
+    #connect to vk group schedule wall
     def _connect_wall(self) -> Dict:
-        vk_session = VkApi(token=self.token)
-        vk_api = vk_session.get_api()
+        vk_session = VkApi(token=self.token) # session
+        vk_api = vk_session.get_api() # connect api
 
-        group_id = vk_api.groups.getById(group_id=self.group_id)[0]["id"]
+        group_id = vk_api.groups.getById(group_id=self.group_id)[0]["id"] #get id group
 
         #get 5 last posts from wall
         wall = vk_api.wall.get(
@@ -45,44 +50,60 @@ class VkGroup:
 
         return wall
     
+    #get date of last .docx with schedule
     def get_new_date(self) -> str:
-        wall = self._connect_wall()
+        wall = self._connect_wall() #connection wall
 
-        for post in wall.get("items", []):
-            for att in post.get("attachments", []):
-                att_type = att.get("type")
-                if att_type == "doc":
-                    att_title = att.get("doc", {}).get("title")
-                    date = text2date(att_title)
+        for post in wall.get("items", []): #iterate list with posts
+            for att in post.get("attachments", []): #iterate attachemsts in every post
+
+                att_type = att.get("type") # type of attachment
+
+                if att_type == "doc": # only document type
+
+                    att_title = att.get("doc", {}).get("title") #get title of document
+                    date = text2date(att_title) #converting title to date
+
                     return date
         return ""
     
+    #get file name of .docx with schedule
     def get_file_name(self) -> str:
-        wall = self._connect_wall()
+        wall = self._connect_wall() #connecting wall
 
-        for post in wall.get("items", []):
-            for att in post.get("attachments", []):
-                att_type = att.get("type")
-                if att_type == "doc":
-                    att_title = att.get("doc", {}).get("title")
+        for post in wall.get("items", []): #iterate list with posts
+            for att in post.get("attachments", []):#iterate attachemsts in every post
+
+                att_type = att.get("type") # type of attachment
+
+                if att_type == "doc": # only document type
+
+                    att_title = att.get("doc", {}).get("title") #get title of document
+
                     return att_title
         return ""
 
 
-    
+    # get schedule document downliad link
     def get_link(self) -> str:
-        wall = self._connect_wall()
+        wall = self._connect_wall() #connecting wall
 
-        file_name = self.get_file_name()
+        file_name = self.get_file_name() #get file name
 
-        for post in wall.get("items", []):
-            for att in post.get("attachments", []):
-                att_type = att.get("type")
-                if att_type == "doc":
-                    att_title = att.get("doc", {}).get("title")
-                    if att_title == file_name:
-                        logger.info("Parser get download link %s", att["doc"]["url"])
-                        att_url = att.get("doc", {}).get("url")
+        for post in wall.get("items", []): #iterate list with posts
+            for att in post.get("attachments", []): # iterate attacments in every post
+
+                att_type = att.get("type") # type of attachment
+
+                if att_type == "doc": #only document tipe
+
+                    att_title = att.get("doc", {}).get("title") # doc title
+
+                    if att_title == file_name: # only file with file_name
+
+                        att_url = att.get("doc", {}).get("url") #get download link
+                        logger.info("Parser get download link %s", att_url)
+
                         return att_url
         
         return ""
@@ -91,27 +112,33 @@ class VkGroup:
 #main function
 def run_parser() -> bool:
     try:
-        logger.info("Parser start")
+        logger.info("Парсер расписания запустился!")
         #Classes
         data = DataBase()
         group = VkGroup()
         #get dates
         last_date = data.get_last_schedule_date()
         last_date = last_date or ""
+        logger.info(f"Парсер получил последнюю дату: {last_date}")
         new_date = group.get_new_date()
+        logger.info(f"Парсер получил новую дату: {new_date}")
 
 
         if new_date > last_date:
             link = group.get_link()
+            logger.info(f"Парсер получил ссылку на скачивание файла расписания: {link}")
             if download_file(link):
+                logger.info(f"Парсер скачал файл расписания")
                 schedule = get_schedule()
+                logger.info(f"Парсер получил расписание")
                 if schedule:
                     for cell in schedule:
-                        data.ensure_lesson(group_name=cell[0],
+                        if data.ensure_lesson(group_name=cell[0],
                                            subject_name=cell[2],
                                            lesson_num=cell[1],
                                            classroom=cell[3],
-                                           date=new_date)
+                                           date=new_date):
+                            logger.info(f"Парсер занес в базу расписание для группы {cell[0]}")
                     return True
         return False
     except Exception:
@@ -174,6 +201,7 @@ def get_schedule() -> List:
     for row in table.rows:
         for name in data.get_group_names():
             cells = clean([cell.text.strip() for cell in row.cells])
+            print(cells, len(cells))
 
             if len(cells) == 4:
                 if name == convert_group_name(cells[0]):
@@ -190,6 +218,14 @@ def get_schedule() -> List:
                         cells[-3],
                         cells[-2],
                         cells[-1]
+                    ])
+            elif len(cells) == 3:
+                if name == convert_group_name(cells[0]):
+                    schedule.append([
+                        name,
+                        cells[-2],
+                        cells[-1],
+                        "Пусто"
                     ])
 
     return schedule
@@ -214,6 +250,14 @@ def upload_data(data, tag, value):
     with open("data.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
-if __name__ == "__main__":
-    result = run_parser()
-    print(result)
+if __name__ == '__main__':
+    while True:
+        try:
+            result = run_parser()
+            logger.info(f"Парсер выполнил свою работу и пошел спать! Результат - {result}")
+            sleep(600)
+        except KeyboardInterrupt:
+            logger.info("Парсер выключен!")
+            break
+        except Exception:
+            logger.info("Exception: ")

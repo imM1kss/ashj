@@ -11,7 +11,7 @@ while True:
         from datetime import datetime, timedelta
 
         from services.parser import run_parser
-        from services.config_vk import send_message
+        from services.config_vk import bot
         from services.Datbase import DataBase
         import asyncio
         import random
@@ -44,6 +44,9 @@ while True:
             # Объединяем все строки с переносом
             return "\n".join(lines).strip()
 
+        async def send(peer_id, text):
+            await bot.api.messages.send
+
         def parser_pool():
             try:
                 result = run_parser()
@@ -55,16 +58,18 @@ while True:
                         vk_id = data.get_vk_id(group_name=name)
                         text = format_schedule(schedule=schedule)
                         
-                        asyncio.run(send_message(peer_id=vk_id,text=text))
-                        time.sleep(600)
+                time.sleep(600)
             except Exception:
                 logger.exception("Exception")
+        
+        def main():
+            thread_pars = threading.Thread(target=parser_pool,daemon=True)
+            thread_pars.start()
 
-        thread_bot = threading.Thread(target=parser_pool, daemon=True)
-
-        thread_bot.start()
-
-        thread_bot.join()
+            bot.run_forever()
+        
+        if __name__ == "__main__":
+            main()
 
         
     except Exception:
