@@ -242,6 +242,20 @@ class DataBase:
                 return None
             return row["id"]
     
+    def get_group_name(self,
+                       vk_id:Optional[int] = None,
+                       telegram_id: Optional[int] = None) -> str:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(""" SELECT name
+                        FROM groups
+                        WHERE telegram_id = ? OR vk_id = ?
+            """,(telegram_id,vk_id))
+
+            row = cur.fetchone()
+            if row:
+                return row["name"]
+    
     def get_group_names(self) -> List[str]:
         with self._connect() as conn:
             cur = conn.cursor()
@@ -295,17 +309,20 @@ class DataBase:
     
     def get_subjects(self,
                      telegram_id: Optional[int] = None,
-                     vk_id: Optional[int] = None) -> List[Tuple[int,str]]:
-        if telegram_id is None and vk_id is None:
+                     vk_id: Optional[int] = None,
+                     group_name:Optional[str] = None) -> List[Tuple[int,str]]:
+        if telegram_id is None and vk_id is None and group_name is None:
             raise ValueError("Нужен хотя-бы вк или тг")
         
         with self._connect() as conn:
             cur = conn.cursor()
+            group_id = self.get_group_id(telegram_id=telegram_id,
+                                         vk_id=vk_id, name=group_name)
             cur.execute("""SELECT id,name 
-                        FROM subjects 
-                        JOIN groups ON subjects.group_id = groups.id 
-                        WHERE groups.telegram_id = ? OR groups.vk_id = ?""",
-                        (telegram_id, vk_id))
+                        FROM subjects
+                        WHERE group_id = ?
+                        ORDER BY id ASC""",
+                        (group_id,))
             return [(row["id"],row["name"]) for row in cur.fetchall()]
     
     def delete_subject(self,
@@ -350,24 +367,30 @@ class DataBase:
                 raise ValueError("Subject is not founded")
     
     def get_subject_name(self,
+                         subject_id: Optional[int] = None,
                          telegram_id:Optional[int] = None,
                          vk_id:Optional[int] = None,
                          name:str = None,
                          year:int = None) -> str:
-        if telegram_id is None and vk_id is None:
+        if telegram_id is None and vk_id is None and subject_id is None:
             raise ValueError("Нужен хотя-бы вк или тг")
-        if name is None or year is None:
+        if (name is None or year is None) and subject_id is None:
             raise ValueError("Наименование или Год не указаны")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
-            cur.execute("SELECT name FROM subjects WHERE group_id = ? AND year = ? AND name = ?",(group_id,year,name))
-            row = cur.fetchone()
-            if row:
-                return row["name"]
+            if subject_id is not None:
+                cur.execute("SELECT name FROM subjects WHERE id =?",(subject_id,))
+                row = cur.fetchone()
+                if row:
+                    return row["name"]
+
             else:
-                raise ValueError("Предмет не был найден")
+                group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+                cur.execute("SELECT name FROM subjects WHERE group_id = ? AND year = ? AND name = ?",(group_id,year,name))
+                row = cur.fetchone()
+                if row:
+                    return row["name"]
     
     #--------------------------SCHEDULE----------------------
     def ensure_lesson(self,
@@ -411,8 +434,7 @@ class DataBase:
     def get_schedule(self,
                     telegram_id: Optional[int] = None, 
                     vk_id:Optional[int] = None,
-                    group_name:Optional[str] = None,
-                    date:str = None) -> List[Tuple[int,str,str]]:
+                    group_name:Optional[str] = None,) -> List[Tuple[int,str,str]]:
         
         if telegram_id is None and vk_id is None and group_name is None:
             raise ValueError("Нужен хотя-бы вк или тг")
@@ -420,12 +442,13 @@ class DataBase:
         with self._connect() as conn:
             cur = conn.cursor()
             group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id, name=group_name)
+            date = self.get_last_schedule_date()
             cur.execute("""SELECT subjects.name,classroom,lesson_num 
                         FROM schedule
                         JOIN subjects ON schedule.subject_id = subjects.id
-                        WHERE schedule.group_id = ? AND date = (SELECT MAX(date) from schedule)
+                        WHERE schedule.group_id = ? AND date = ?
                         ORDER BY lesson_num ASC""",
-                        (group_id,))
+                        (group_id,date))
             rows = cur.fetchall()
             if not rows:
                 raise ValueError("Рассписание на этот день не найдено")

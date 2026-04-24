@@ -15,6 +15,8 @@ import json
 from datetime import datetime
 from services.logging_config import setup_logging
 import logging
+from services.cmd_handler import get_groq_response
+from ast import literal_eval
 
 data = DataBase()
 load_dotenv()
@@ -130,6 +132,21 @@ def confirm_adm_kb(name:str, peer_id:int) -> Keyboard:
 
     return kb
 
+def confirm_homework_kb(message_text:str = None, cmid:int = None) -> Keyboard:
+    if message_text is None or cmid is None:
+        return None
+
+    kb = Keyboard(inline=True)
+
+    kb.add(
+        Callback("Да", payload={"act":"is_homework","text":message_text,"cmid":cmid}),
+        color=KeyboardButtonColor.POSITIVE
+    )
+
+    kb.add(Callback("Нет", payload={"act":"!is_homework"}),
+           color=KeyboardButtonColor.NEGATIVE)
+    
+    return kb
 
 
 @bot.on.chat_message(func=lambda m: m.text and "бот" in m.text.lower())
@@ -147,6 +164,13 @@ async def start_message(message: Message):
         await bot.api.messages.delete(peer_id=message.peer_id,
                                       cmids=[message.conversation_message_id],
                                       delete_for_all=True)
+    else:
+        keyboard = confirm_homework_kb(message.text,message.conversation_message_id)
+        await message.reply(
+            message="Подтвердите, что это дз:",
+            keyboard=keyboard
+        )
+
 
 @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, dataclass=MessageEvent)
 async def handle_keyboard_events(event: MessageEvent):
@@ -248,6 +272,58 @@ async def handle_keyboard_events(event: MessageEvent):
                                                 message=f"Какие-то неполадки: не удалось привязать чат {pl_peer_id} к {name}")
             await bot.api.messages.delete(peer_id=peer_id,
                                           delete_for_all=True,cmids=[event.object.conversation_message_id])
+    
+    elif payload.get("act") == "!is_homework":
+        await bot.api.messages.delete(cmids=[event.conversation_message_id],
+                                      peer_id=peer_id,
+                                      delete_for_all=True)
+        await event.show_snackbar("Хорошо! Извините, за беспокойство!")
+    
+    elif payload.get("act") == "is_homework":
+        cmid = payload.get("cmid")
+        text = payload.get("text")
+
+        await bot.api.messages.edit(peer_id=event.peer_id,
+                                    cmid=event.conversation_message_id,
+                                    message="Groq проверяет...",
+                                    keyboard = "")
+        result = await get_groq_response(message=text,group_name=data.get_group_name(vk_id=peer_id))
+
+        if result != "None":
+            result = literal_eval(result.strip())
+            if len(result) != 3:
+                return
+            await bot.api.messages.edit(peer_id=event.peer_id,
+                                    cmid=event.conversation_message_id,
+                                    message="Успешно!",
+                                    keyboard = "")
+            await asyncio.sleep(2)
+            await bot.api.messages.delete(peer_id=event.peer_id,
+                                    cmids=[event.conversation_message_id],
+                                    delete_for_all=True)
+            await event.show_snackbar(f"Дз по {data.get_subject_name(subject_id=result[0])} было успешно добавлено!")
+            await bot.api.messages.delete(peer_id=event.peer_id,
+                                    cmids=[cmid],
+                                    delete_for_all=True)
+        else:
+            await bot.api.messages.edit(peer_id=event.peer_id,
+                                    cmid=event.conversation_message_id,
+                                    message="Не опознано!",
+                                    keyboard = "")
+            await asyncio.sleep(2)
+            await bot.api.messages.edit(peer_id=event.peer_id,
+                                    cmid=event.conversation_message_id,
+                                    message="ДЗ не опознано, извините возможно неполадки! Я уже написал админу!",
+                                    keyboard = "")
+            for Id in data.get_admins():
+                vk_id = data.get_user_vk_id(Id)
+                await bot.api.messages.send(
+                    user_id=vk_id,
+                    message=f"Не получилось добавить дз '{text}' в группе {event.peer_id} пользователем {event.user_id}",
+                    random_id=randint(0,1000000)
+                )
+                
+            
 
 
 
@@ -277,8 +353,7 @@ async def check_parser() -> None:
         with open("last_date.json",'w',encoding="utf-8") as f:
             json.dump(file_data, f, indent=4)
         for name in data.get_group_names():
-            schedule = data.get_schedule(group_name=name,
-                                         date=sch_date)
+            schedule = data.get_schedule(group_name=name)
             vk_id = data.get_vk_id(group_name=name)
             
             now = datetime.strptime(sch_date, "%Y-%m-%d")
