@@ -25,5 +25,5 @@ jobs:
           git pull origin main
           git reset --hard origin/main
           systemctl --user restart slavikpd
-								systemctl --user restart slavikbotd
+          systemctl --user restart slavikbotd
           "
