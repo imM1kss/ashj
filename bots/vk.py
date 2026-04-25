@@ -356,10 +356,8 @@ async def check_parser() -> None:
             schedule = data.get_schedule(group_name=name)
             vk_id = data.get_vk_id(group_name=name)
             
-            now = datetime.strptime(sch_date, "%Y-%m-%d")
-            days = ["ПОНЕДЕЛЬНИК", "ВТОРНИК", "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА", "СУББОТА", "ВОСКРЕСЕНЬЕ"]
-            date = f"{days[now.weekday()]} ({now.strftime("%d.%m")})"
-            lines = [f"Расписание на {date}", "---------------------"]
+            
+            lines = [f"Расписание!", "---------------------"]
             ln = []
             
             for lesson, subject, room in schedule:
