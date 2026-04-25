@@ -24,5 +24,6 @@ jobs:
           git config --global --add safe.directory ${{ secrets.WORK_DIR }}
           git pull origin main
           git reset --hard origin/main
-          systemctl --user restart slavikd
+          systemctl --user restart slavikpd
+								systemctl --user restart slavikbotd
           "
