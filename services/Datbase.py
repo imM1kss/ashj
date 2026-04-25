@@ -482,7 +482,7 @@ class DataBase:
             row = cur.fetchone()
             if row is not None:
                 return row["date"]
-            return None
+            return ""
 
     
     #-------------------------GRADES----------------------------------
