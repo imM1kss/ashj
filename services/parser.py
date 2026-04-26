@@ -201,7 +201,6 @@ def get_schedule() -> List:
     for row in table.rows:
         for name in data.get_group_names():
             cells = clean([cell.text.strip() for cell in row.cells])
-            print(cells, len(cells))
 
             if len(cells) == 4:
                 if name == convert_group_name(cells[0]):
