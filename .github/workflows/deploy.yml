@@ -22,8 +22,9 @@ jobs:
           cd ${{ secrets.WORK_DIR }} || { echo 'Directory not found'; exit 1; }
           echo 'Current directory:' && pwd
           git config --global --add safe.directory ${{ secrets.WORK_DIR }}
-          git stash
           git pull origin main
-          (git stash pop || echo 'No changes to apply')
-          systemctl --user restart slavikd
+          git reset --hard origin/main
+          systemctl --user restart slavikpd
+          systemctl --user restart slavikbotd
           "
+

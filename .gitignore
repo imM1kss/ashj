@@ -18,9 +18,8 @@ __pycache__/
 *.log
 *.sqlite3
 *.db
-tests/
+
 
 *.docx
 data.json
-
-test.py
+checking.py
