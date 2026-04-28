@@ -106,19 +106,19 @@ class DataBase:
             cur = conn.cursor()
 
             cur.execute("""
-                SELECT id, telegram_id, vk_id, group_id FROM users
+                SELECT id, telegram_id, vk_id, group_id, full_name FROM users
                 WHERE telegram_id = ? OR vk_id = ?
             """, (telegram_id, vk_id))
             row = cur.fetchone()
 
             if row:
-                user_id = row["id"]
+                user_id = None
 
                 if telegram_id and not row["telegram_id"]:
                     cur.execute("UPDATE users SET telegram_id = ? WHERE id = ?", (telegram_id, user_id))
                 if vk_id and not row["vk_id"]:
                     cur.execute("UPDATE users SET vk_id = ? WHERE id = ?", (vk_id, user_id))
-                if group_id is not None and not row["group_id"] is None:
+                if group_id is not None and row["group_id"] is None:
                     cur.execute("UPDATE users SET group_id = ? WHERE id = ?", (group_id, user_id))
                 if full_name is not None and not row["full_name"]:
                     cur.execute("UPDATE users SET full_name = ? WHERE id = ?", (full_name, user_id))

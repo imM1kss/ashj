@@ -149,26 +149,47 @@ def confirm_homework_kb(message_text:str = None, cmid:int = None) -> Keyboard:
     return kb
 
 
-@bot.on.chat_message(func=lambda m: m.text and "бот" in m.text.lower())
+@bot.on.chat_message(func=lambda m: bool(m.text and re.search(r'\bбот\b', m.text.lower())))
 async def start_message(message: Message):
 
     logger.info("Бот получил команду: '%s' от пользователя %s в группе %s", message.text,
                  message.from_id,message.peer_id)
+    cur_state = await bot.state_dispenser.get(message.peer_id)
     
-    if "привяжи" in message.text.lower():
+    if ("привяжи" in message.text.lower()) and (cur_state.state != ServeyState.JOIN):
         keyboard = join_kb(0)
         await bot.api.messages.send(peer_id=message.peer_id,
                                     random_id=randint(0,10000),
                                     keyboard=keyboard,
-                                    message="Выберите группу")
+                                    message="Выберите группу",
+                                    silent=True)
         await bot.api.messages.delete(peer_id=message.peer_id,
                                       cmids=[message.conversation_message_id],
                                       delete_for_all=True)
+        await bot.state_dispenser.set(message.peer_id, ServeyState.JOIN)
+    elif ("обнови базу" in message.text.lower()):
+        response = await bot.api.messages.get_conversation_members(
+            peer_id=message.peer_id
+        )
+        group_id = data.get_group_id(vk_id=message.peer_id)
+        if group_id is None:
+            return
+
+        users = {user.id:f"{user.first_name}{user.last_name}" for user in response.profiles}
+        for member in response.items:
+            member_id = member.member_id
+
+            if (member_id > 0) and (member_id in users):
+                name = users[member_id]
+                if data.ensure_user(full_name=f"{name}", vk_id=member_id, group_id=group_id) is not None:
+                    logger.info(f"Новый пользователь {name}|{member_id} привязан к группе {group_id}!")
+
     else:
         keyboard = confirm_homework_kb(message.text,message.conversation_message_id)
         await message.reply(
-            message="Подтвердите, что это дз:",
-            keyboard=keyboard
+            message="Вы хотите добавить дз?",
+            keyboard=keyboard,
+            silent=True
         )
 
 
@@ -212,11 +233,14 @@ async def handle_keyboard_events(event: MessageEvent):
         is_create = None
 
         if data.get_group_id(name=name) is not None:
-            await event.show_snackbar("Извините, но данная группа уже зарегистрирована!")
+            await event.show_snackbar("""Извините, но ваша заявка отклонена, т.к. такая группа уже привязана!
+                                      (P.s. я сообщил администратору)""")
             is_create = False
+            await bot.state_dispenser.delete(peer_id=peer_id)
         else:
             is_create = True
-            await event.show_snackbar(f"Группа {name} на рассмотрении у администратора")
+            await event.show_snackbar(f"""Заявка на привязку вашего чата к группе {name} на рассмотрение!
+                                       Пожалуйста подождите, администратор уже занят этим вопросом""")
         
         admins = data.get_admins()
         for Id in admins:
@@ -248,6 +272,8 @@ async def handle_keyboard_events(event: MessageEvent):
             delete_for_all=True,
             cmids=[event.object.conversation_message_id]
         )
+        await bot.state_dispenser.delete(peer_id=pl_peer_id)
+
     elif payload.get("act") == "accepted":
         pl_peer_id = payload.get("peer_id")
         name = payload.get("name")
@@ -272,6 +298,8 @@ async def handle_keyboard_events(event: MessageEvent):
                                                 message=f"Какие-то неполадки: не удалось привязать чат {pl_peer_id} к {name}")
             await bot.api.messages.delete(peer_id=peer_id,
                                           delete_for_all=True,cmids=[event.object.conversation_message_id])
+        
+        await bot.state_dispenser.delete(peer_id=pl_peer_id)
     
     elif payload.get("act") == "!is_homework":
         await bot.api.messages.delete(cmids=[event.conversation_message_id],
