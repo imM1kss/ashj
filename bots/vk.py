@@ -98,13 +98,13 @@ def join_kb(page:int) -> Keyboard:
     total_page = ceil(length/ITEMS_PER_PAGE)
     if page > 0:
         kb.add(
-            Callback("<- Назад", payload={"act":"change_page", "page":page-1}),
+            Callback("<- Назад", payload={"act":"change_page", "page":page-1,"method":"join_kb"}),
             color=KeyboardButtonColor.SECONDARY
         )
     
     if (page + 1) < total_page:
         kb.add(
-            Callback("Вперёд ->", payload={"act":"change_page", "page":page+1}),
+            Callback("Вперёд ->", payload={"act":"change_page", "page":page+1, "method":"join_kb"}),
             color=KeyboardButtonColor.SECONDARY
         )
     
@@ -116,6 +116,60 @@ def join_kb(page:int) -> Keyboard:
     )
     
     return kb
+
+def hw_subj_kb(vk_id:int = None, page:int = 0) -> Keyboard:
+    global ITEMS_PER_PAGE
+
+    if vk_id is None:
+        return
+
+    kb = Keyboard(inline=True)
+
+    subjects = data.get_subjects(vk_id=vk_id)
+
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = start_idx + ITEMS_PER_PAGE
+    length = len(subjects)
+
+    if max([start_idx, end_idx, length-1]) != (length-1):
+        return
+    
+    cur_subjects = subjects[start_idx:end_idx]
+
+    for i,(id,name) in enumerate(cur_subjects):
+        kb.add(
+            Callback(f"{name}", payload={"act":"get_hw", "subj_id":id}),
+            KeyboardButtonColor.PRIMARY
+        )
+
+        if ((i+1) % 2 == 0) and (i + 1 != len(cur_subjects)):
+            kb.row()
+    
+    kb.row()
+
+    total_page = ceil(length/ITEMS_PER_PAGE)
+    if page > 0:
+        kb.add(
+            Callback("<- Назад", payload={"act":"change_page", "page":page-1,"method":"hw_subj_kb"}),
+            color=KeyboardButtonColor.SECONDARY
+        )
+    
+    if (page + 1) < total_page:
+        kb.add(
+            Callback("Вперёд ->", payload={"act":"change_page", "page":page+1, "method":"hw_subj_kb"}),
+            color=KeyboardButtonColor.SECONDARY
+        )
+    
+    kb.row()
+
+    kb.add(
+        Callback("Закрыть", payload={"act":"close"}),
+        color=KeyboardButtonColor.NEGATIVE
+    )
+    
+    return kb
+
+
 
 def confirm_adm_kb(name:str, peer_id:int) -> Keyboard:
     kb = Keyboard(inline=True)
@@ -155,8 +209,9 @@ async def start_message(message: Message):
     logger.info("Бот получил команду: '%s' от пользователя %s в группе %s", message.text,
                  message.from_id,message.peer_id)
     cur_state = await bot.state_dispenser.get(message.peer_id)
+    text = message.text.lower()
     
-    if ("привяжи" in message.text.lower()) and (cur_state.state != ServeyState.JOIN):
+    if (text.strip().endswith("привяжи")) and (cur_state.state != ServeyState.JOIN):
         keyboard = join_kb(0)
         await bot.api.messages.send(peer_id=message.peer_id,
                                     random_id=randint(0,10000),
@@ -167,7 +222,7 @@ async def start_message(message: Message):
                                       cmids=[message.conversation_message_id],
                                       delete_for_all=True)
         await bot.state_dispenser.set(message.peer_id, ServeyState.JOIN)
-    elif ("обнови базу" in message.text.lower()):
+    elif (text.strip().endswith("обнови базу")):
         response = await bot.api.messages.get_conversation_members(
             peer_id=message.peer_id
         )
@@ -183,6 +238,16 @@ async def start_message(message: Message):
                 name = users[member_id]
                 if data.ensure_user(full_name=f"{name}", vk_id=member_id, group_id=group_id) is not None:
                     logger.info(f"Новый пользователь {name}|{member_id} привязан к группе {group_id}!")
+    elif (text.strip().endswith("дз")):
+        keyboard = hw_subj_kb(vk_id=message.peer_id, page = 0)
+        await bot.api.messages.send(peer_id=message.peer_id,
+                                    random_id=randint(0,10000),
+                                    keyboard=keyboard,
+                                    message="Выберите предмет",
+                                    silent=True)
+        await bot.api.messages.delete(peer_id=message.peer_id,
+                                      cmids=[message.conversation_message_id],
+                                      delete_for_all=True)
 
     else:
         keyboard = confirm_homework_kb(message.text,message.conversation_message_id)
@@ -213,12 +278,19 @@ async def handle_keyboard_events(event: MessageEvent):
     # 1. Если нажали на стрелочку
     if payload.get("act") == "change_page":
         new_page = payload.get("page")
+        method = payload.get("method")
         
-        # Редактируем сообщение: подменяем старую клавиатуру на новую
-        await event.edit_message(
-            message=f"Страница {new_page + 1}",
-            keyboard=join_kb(page=new_page)
-        )
+        if method == "join_kb":
+            # Редактируем сообщение: подменяем старую клавиатуру на новую
+            await event.edit_message(
+                message=f"Страница {new_page + 1}",
+                keyboard=join_kb(page=new_page)
+            )
+        elif method == "hw_subj_kb":
+             await event.edit_message(
+                message=f"Страница {new_page + 1}",
+                keyboard=hw_subj_kb(page=new_page, vk_id=peer_id)
+            )
         
     # 2. Если нажали на само имя
     elif payload.get("act") == "select_name":
@@ -321,6 +393,8 @@ async def handle_keyboard_events(event: MessageEvent):
             result = literal_eval(result.strip())
             if len(result) != 3:
                 return
+            
+            subject_name = data.get_subject_name(subject_id=result[0])
             await bot.api.messages.edit(peer_id=event.peer_id,
                                     cmid=event.conversation_message_id,
                                     message="Успешно!",
@@ -329,7 +403,9 @@ async def handle_keyboard_events(event: MessageEvent):
             await bot.api.messages.delete(peer_id=event.peer_id,
                                     cmids=[event.conversation_message_id],
                                     delete_for_all=True)
-            await event.show_snackbar(f"Дз по {data.get_subject_name(subject_id=result[0])} было успешно добавлено!")
+            data.ensure_homework(vk_id=peer_id, subject_name=subject_name, description=f"{text}")
+
+            await event.show_snackbar(f"Дз по {subject_name} было успешно добавлено!")
             await bot.api.messages.delete(peer_id=event.peer_id,
                                     cmids=[cmid],
                                     delete_for_all=True)
@@ -350,12 +426,6 @@ async def handle_keyboard_events(event: MessageEvent):
                     message=f"Не получилось добавить дз '{text}' в группе {event.peer_id} пользователем {event.user_id}",
                     random_id=randint(0,1000000)
                 )
-                
-            
-
-
-
-
     
     elif payload.get("act") == "close":
         
@@ -366,6 +436,28 @@ async def handle_keyboard_events(event: MessageEvent):
         )
 
         await event.show_snackbar("Меню закрыто")
+    
+    elif payload.get("act") == "get_hw":
+        subj_id = payload.get("subj_id")
+        subj_name = data.get_subject_name(subject_id=subj_id)
+
+        await bot.api.messages.delete(
+            peer_id=event.object.peer_id,
+            cmids=[event.object.conversation_message_id],
+            delete_for_all=True
+        )
+
+        hw = data.get_homework(vk_id=peer_id, subject_name=subj_name)
+        lines = [f"ДЗ по {subj_name}:"]
+        if hw is not None:
+            for el in hw:
+                lines.append(f"-->{el[2]}")
+        else:
+            lines.append("--> Не задано :|")
+        
+        text = "\n".join(lines)
+
+        await event.show_snackbar(text)
 
 async def check_parser() -> None:
     logger.info("Проверка парсера началась")
@@ -388,13 +480,30 @@ async def check_parser() -> None:
             date = f"{days[now.weekday()]} ({now.strftime("%d.%m")})"
             lines = [f"Расписание на {date}", "---------------------"]
             ln = []
+            subjects = []
             
             for lesson, subject, room in schedule:
                 l = re.sub(r'\D', '', lesson)
                 ln.append(l)
                 s = subject.capitalize()
+                subjects.append(s)
                 r = "".join(c for c in room if c.isdigit()) if any(c.isdigit() for c in room) else room
                 lines.append(f"({l})  {s}  [{r}]")
+
+            lines.append("---------------------")
+
+            for subj in subjects:
+                hw = data.get_homework(vk_id=vk_id,subject_name=subj)
+                if hw is not None:
+                    lines.append(f"[{subj}]")
+                    for el in hw:
+                        lines.append(f"--> {el[2]}")
+                        lessons_left = el[-1] - 1
+                        if lessons_left <= 0:
+                            data.delete_homework(el[0])
+                        else:
+                            data.set_lesson(el[0],lessons_left=lessons_left)
+            
 
             lines.append("---------------------")
 
@@ -424,5 +533,10 @@ async def periodic_task():
 
 
 if __name__ == "__main__":
-    bot.loop_wrapper.add_task(periodic_task())
-    bot.run_forever()
+        try:
+            bot.loop_wrapper.add_task(periodic_task())
+            bot.run_forever()
+        except KeyboardInterrupt:
+            logger.info("Бот выключен! Спокойной ночи )")
+        except Exception:
+            logger.exception("Ошибка: ")
