@@ -44,10 +44,98 @@ def convert_group_name(group_name:str = None) -> str:
 class ServeyState(BaseStateGroup):
     JOIN = "join"
 
+class SetterState:
+    def __init__(self, parent):
+        self.parent = parent
+    
+    async def lastCmid(self, peer_id:Optional[int] = None, 
+                          cmid:Optional[int] = None) -> None:
+        if (peer_id is None) or (cmid is None):
+            raise ValueError("peer_id is None" if peer_id is None else "cmid is None")
+        
+        await self.parent.load()
+        
+        if self.parent.GROUPS.get(peer_id) is None:
+            await self.parent.add(peer_id=peer_id)
+            await self.parent.load()
+        
+        lucmid = self.parent.GROUPS.get(peer_id, {}).get("last_user_cmid") or 1
+
+        if (cmid - lucmid) > 1:
+            lucmid = lucmid if (cmid - lucmid) < 100 else (cmid - 100)
+            for i in range(lucmid, cmid+1):
+                try:
+                    response = await bot.api.messages.get_by_conversation_message_id(
+                        conversation_message_ids=[i],
+                        peer_id=peer_id
+                    )
+                    message = response.items[0] if response.items else None
+                    from_id = getattr(message, "from_id", None) if message != None else None
+                    if from_id < 0:
+                        self.parent.GROUPS[peer_id]["last_bot_cmid"] = i
+                except Exception:
+                    logger.exception("Ошибка при проверке cmid")
+
+        
+        await self.parent.save()
+    
+    async def lastSchCmid(self, peer_id:Optional[int] = None):
+        if peer_id is None:
+            raise ValueError("peer_id is None")
+        
+        if self.parent.GROUPS.get(peer_id) is None:
+            await self.parent.add(peer_id)
+            await self.parent.load()
+        
+        bot_cmid = self.parent.GROUPS.get(peer_id, {}).get("last_bot_cmid")
+        self.parent.GROUPS[peer_id]["last_sch_cmid"] = bot_cmid
+        
+        
+
+
+class GetterState:
+    def __init__(self, parent):
+        self.parent = parent
+    
+    async def userCmid(self, peer_id:Optional[int] = None) -> int:
+        await self.parent.load()
+        
+        if self.parent.GROUPS.get(peer_id) is None:
+            await self.parent.add(peer_id)
+            await self.parent.load()
+
+        cmid = self.parent.GROUPS.get(peer_id, {}).get("last_user_cmid") or 1
+        return cmid
+    
+    async def botCmid(self, peer_id:Optional[int] = None) -> int:
+        await self.parent.load()
+        
+        if self.parent.GROUPS.get(peer_id) is None:
+            await self.parent.add(peer_id)
+            await self.parent.load()
+
+        cmid = self.parent.GROUPS.get(peer_id, {}).get("last_bot_cmid") or None
+        return cmid
+    
+    async def schCmid(self, peer_id:Optional[int] = None) -> int:
+        await self.parent.load()
+        
+        if self.parent.GROUPS.get(peer_id) is None:
+            await self.parent.add(peer_id)
+            await self.parent.load()
+
+        cmid = self.parent.GROUPS.get(peer_id, {}).get("last_sch_cmid") or None
+        return cmid
+        
+        
+
+
 class StateCmid:
     def __init__(self):
         self.filename = "stateCmid.pkl"
         self.GROUPS = {}
+        self.set = SetterState(self)
+        self.get = GetterState(self)
     
     @classmethod
     async def create(cls) -> StateCmid:
@@ -75,34 +163,17 @@ class StateCmid:
         except Exception:
             logger.exception("Ошибка при сохранении состояний: ")
     
-    async def addGroup(self, peer_id:Optional[int] = None) -> None:
+    async def add(self, peer_id:Optional[int] = None) -> None:
         if peer_id is None:
             raise ValueError("peer_id is None")
+        await self.load()
         self.GROUPS[peer_id] = {
             "last_user_cmid":1,
-            "last_bot_cmid":None,
-            "last_sch_cmid":None
+            "last_bot_cmid":1,
+            "last_sch_cmid":1
         }
+        await self.save()
     
-    async def setLastUserId(self, peer_id:Optional[int] = None) -> None:
-        if (peer_id is None):
-            raise ValueError("peer_id is None")
-        
-        if self.GROUPS.get(peer_id) is None:
-            await self.addGroup(peer_id=peer_id)
-        try:
-            while True:
-                await asyncio.sleep(0.5)
-                cmid = self.GROUPS.get(peer_id, {}).get("last_user_cmid") or 0
-                msg = await bot.api.messages.get_by_conversation_message_id(conversation_message_ids=[cmid], peer_id=peer_id)
-                print(msg)
-                break
-        except:
-            pass
-    
-    async def save(self,):
-        pass
-        
 
 
 
@@ -323,7 +394,6 @@ async def start_message(message: Message):
             keyboard=keyboard,
             silent=True
         )
-        
 
 @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, dataclass=MessageEvent)
 async def handle_keyboard_events(event: MessageEvent):
