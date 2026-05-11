@@ -11,12 +11,14 @@ from math import ceil
 from random import randint
 from dotenv import load_dotenv
 from os import getenv
+from os.path import exists
 import json
 from datetime import datetime
 from services.logging_config import setup_logging
 import logging
 from services.cmd_handler import get_groq_response
 from ast import literal_eval
+import pickle
 
 data = DataBase()
 load_dotenv()
@@ -41,6 +43,71 @@ def convert_group_name(group_name:str = None) -> str:
 
 class ServeyState(BaseStateGroup):
     JOIN = "join"
+
+class StateCmid:
+    def __init__(self):
+        self.filename = "stateCmid.pkl"
+        self.GROUPS = {}
+    
+    @classmethod
+    async def create(cls) -> StateCmid:
+        instanse = cls()
+        await instanse.load()
+        return instanse
+    
+    async def load(self) -> None:
+        if exists(self.filename):
+            try:
+                with open(self.filename, 'rb') as f:
+                    self.GROUPS = pickle.load(f)
+                logger.info("Данные состояния загружены")
+            except Exception:
+                logger.exception("Ошибка при загрузке состояния: ")
+                self.GROUPS = {}
+        else:
+            logger.info("Файл состояния не найден")
+    
+    async def save(self,) -> None:
+        try:
+            with open(self.filename, "wb") as f:
+                pickle.dump(self.GROUPS, f)
+            logger.info("Состояние сохранено!")
+        except Exception:
+            logger.exception("Ошибка при сохранении состояний: ")
+    
+    async def addGroup(self, peer_id:Optional[int] = None) -> None:
+        if peer_id is None:
+            raise ValueError("peer_id is None")
+        self.GROUPS[peer_id] = {
+            "last_user_cmid":1,
+            "last_bot_cmid":None,
+            "last_sch_cmid":None
+        }
+    
+    async def setLastUserId(self, peer_id:Optional[int] = None) -> None:
+        if (peer_id is None):
+            raise ValueError("peer_id is None")
+        
+        if self.GROUPS.get(peer_id) is None:
+            await self.addGroup(peer_id=peer_id)
+        try:
+            while True:
+                await asyncio.sleep(0.5)
+                cmid = self.GROUPS.get(peer_id, {}).get("last_user_cmid") or 0
+                msg = await bot.api.messages.get_by_conversation_message_id(conversation_message_ids=[cmid], peer_id=peer_id)
+                print(msg)
+                break
+        except:
+            pass
+    
+    async def save(self,):
+        pass
+        
+
+
+
+stateCmid = StateCmid()
+
 
 def get_groups() -> List:
     doc = Document("schedule.docx")
@@ -256,7 +323,7 @@ async def start_message(message: Message):
             keyboard=keyboard,
             silent=True
         )
-
+        
 
 @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, dataclass=MessageEvent)
 async def handle_keyboard_events(event: MessageEvent):
