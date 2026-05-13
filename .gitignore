@@ -20,6 +20,8 @@ __pycache__/
 *.db
 
 *.docx
+*.pkl
+*.jpeg
 
 data.json
 checking.py

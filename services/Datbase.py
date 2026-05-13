@@ -5,6 +5,8 @@ import datetime
 from datetime import timedelta
 import secrets
 import string
+from pathlib import Path
+from ast import literal_eval
 
 class DataBase:
     def __init__(self, path: str = "database.db"):
@@ -617,7 +619,7 @@ class DataBase:
                         row['id'],
                         row['name'],
                         row['description'],
-                        json.loads(row['attachments']) if row['attachments'] else [],
+                        literal_eval(row['attachments']) if row['attachments'] else [],
                         row['lessons_left']
                     )
                     for row in rows

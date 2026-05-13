@@ -19,6 +19,12 @@ import logging
 from services.cmd_handler import get_groq_response
 from ast import literal_eval
 import pickle
+import aiofiles
+from pathlib import Path
+import time
+from vkbottle import PhotoMessageUploader
+
+uploader = PhotoMessageUploader(bot.api)
 
 data = DataBase()
 load_dotenv()
@@ -29,6 +35,7 @@ logger = logging.getLogger('vk_bot')
 #const
 ITEMS_PER_PAGE = 6
 GROUP_ID = getenv('schedule_id')
+ASSETS_DIR = Path('assets')
 
 if not data.get_admins():
     vk_id = getenv("owner_vk_id")
@@ -181,7 +188,7 @@ stateCmid = StateCmid()
 
 
 def get_groups() -> List:
-    doc = Document("schedule.docx")
+    doc = Document((ASSETS_DIR / "schedule.docx"))
     groups = []
 
     if not doc.tables:
@@ -307,7 +314,65 @@ def hw_subj_kb(vk_id:int = None, page:int = 0) -> Keyboard:
     
     return kb
 
+def close_kb():
+    kb = Keyboard(inline=True)
+    kb.add(
+        Callback("Закрыть",payload={"act":"close"}),
+        color=KeyboardButtonColor.NEGATIVE
+    )
+    return kb
 
+def remove_kb(vk_id:int, page:int = 0) -> Keyboard:
+    global ITEMS_PER_PAGE
+
+    if vk_id is None:
+        return
+
+    kb = Keyboard(inline=True)
+
+    subjects = data.get_subjects(vk_id=vk_id)
+
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = start_idx + ITEMS_PER_PAGE
+    length = len(subjects)
+
+    if max([start_idx, end_idx, length-1]) != (length-1):
+        return
+    
+    cur_subjects = subjects[start_idx:end_idx]
+
+    for i,(id,name) in enumerate(cur_subjects):
+        kb.add(
+            Callback(f"{name}", payload={"act":"del_hw", "subj_id":id}),
+            KeyboardButtonColor.PRIMARY
+        )
+
+        if ((i+1) % 2 == 0) and (i + 1 != len(cur_subjects)):
+            kb.row()
+    
+    kb.row()
+
+    total_page = ceil(length/ITEMS_PER_PAGE)
+    if page > 0:
+        kb.add(
+            Callback("<- Назад", payload={"act":"change_page", "page":page-1,"method":"hw_subj_kb"}),
+            color=KeyboardButtonColor.SECONDARY
+        )
+    
+    if (page + 1) < total_page:
+        kb.add(
+            Callback("Вперёд ->", payload={"act":"change_page", "page":page+1, "method":"hw_subj_kb"}),
+            color=KeyboardButtonColor.SECONDARY
+        )
+    
+    kb.row()
+
+    kb.add(
+        Callback("Закрыть", payload={"act":"close"}),
+        color=KeyboardButtonColor.NEGATIVE
+    )
+    
+    return kb
 
 def confirm_adm_kb(name:str, peer_id:int) -> Keyboard:
     kb = Keyboard(inline=True)
@@ -347,9 +412,13 @@ async def start_message(message: Message):
     logger.info("Бот получил команду: '%s' от пользователя %s в группе %s", message.text,
                  message.from_id,message.peer_id)
     cur_state = await bot.state_dispenser.get(message.peer_id)
+    if cur_state:
+        cur_state = cur_state.state
+    else:
+        cur_state = ""
     text = message.text.lower()
     
-    if (text.strip().endswith("привяжи")) and (cur_state.state != ServeyState.JOIN):
+    if (text.strip().endswith("привяжи")) and (cur_state != ServeyState.JOIN):
         keyboard = join_kb(0)
         await bot.api.messages.send(peer_id=message.peer_id,
                                     random_id=randint(0,10000),
@@ -386,14 +455,142 @@ async def start_message(message: Message):
         await bot.api.messages.delete(peer_id=message.peer_id,
                                       cmids=[message.conversation_message_id],
                                       delete_for_all=True)
+    elif (text.strip().endswith("расписание")):
+        await bot.api.messages.delete(peer_id=message.peer_id,
+                                      cmids=[message.conversation_message_id],
+                                      delete_for_all=True)
+        name = data.get_group_name(vk_id=message.peer_id)
+        schedule = data.get_schedule(group_name=name)
+        user_id = message.from_id
+        users_info = await bot.api.users.get(user_ids=[user_id], fields=["screen_name"])
+        if users_info:
+            user = users_info[0]
+            # Если у пользователя установлен короткий адрес (domain/screen_name)
+            if user.screen_name:
+                nick =  f"@{user.screen_name}"
+            else:
+                # Если ника нет, возвращаем ссылку через id
+                nick =  f"@id{user_id}"
+        else: nick = "Неизвестно"
+        lines = [f"Расписание, {nick}:"]
+        ln = []
+        subjects = []
+        
+        for lesson, subject, room in schedule:
+            l = re.sub(r'\D', '', lesson)
+            ln.append(l)
+            s = subject.capitalize()
+            subjects.append(s)
+            r = "".join(c for c in room if c.isdigit()) if any(c.isdigit() for c in room) else room
+            lines.append(f"({l})  {s}  [{r}]")
+        
+        text = "\n".join(lines)
+        keyboard = close_kb()
+        await bot.api.messages.send(peer_id=message.peer_id, random_id = randint(0,10000),
+                                    silent = True, keyboard=keyboard, message=text)
+        
+    elif (text.strip().endswith("удали")):
+        kb = remove_kb(message.peer_id)
+        await bot.api.messages.send(peer_id=message.peer_id, random_id=randint(0,1000),
+                                    silent=True, message = "Выберите предмет:", keyboard = kb)
+        await bot.api.messages.delete(cmids=[message.conversation_message_id],peer_id=message.peer_id,
+                                      delete_for_all=True)
+        
 
     else:
-        keyboard = confirm_homework_kb(message.text,message.conversation_message_id)
-        await message.reply(
-            message="Вы хотите добавить дз?",
-            keyboard=keyboard,
-            silent=True
-        )
+        all_chunks = await get_all_texts_recursive(message)
+        full_text = ". ".join(all_chunks)
+        result = await get_groq_response(message=full_text,group_name=data.get_group_name(vk_id=message.peer_id))
+
+        if result != "None":
+            result = literal_eval(result.strip())
+            if len(result) != 3:
+                return
+            
+            att_urls = await get_all_photos_recursive(message)
+            att_names = []
+            for url in att_urls:
+                name = await download_photo(url)
+                att_names.append(name)
+
+            
+            subject_name = data.get_subject_name(subject_id=result[0])
+            data.ensure_homework(vk_id=message.peer_id, subject_name=subject_name, description=f"{result[1]}", attachments=att_names)
+            keyboard = close_kb()
+            await bot.api.messages.send(peer_id=message.peer_id,
+                                        random_id=randint(0,100000),
+                                        silent = True,
+                                        message=f"ДЗ по {subject_name} добавлено!",
+                                        keyboard=keyboard)
+
+
+        else:
+            for Id in data.get_admins():
+                vk_id = data.get_user_vk_id(Id)
+                await bot.api.messages.send(
+                    user_id=vk_id,
+                    message=f"Не получилось добавить дз '{text}' в группе {message.peer_id} пользователем {message.from_id}",
+                    random_id=randint(0,1000000)
+                )
+
+async def download_photo(url):
+    try:
+        content = await bot.api.http_client.request_content(url)
+        now = int(time.time())
+        file_name = f"photo_{now}.jpeg"
+        file_path = ASSETS_DIR / file_name
+        async with aiofiles.open(file_path, mode="wb") as f:
+            await f.write(content)
+        await asyncio.sleep(1)
+        return file_name
+    except Exception:
+        logger.exception("Ошибка при загрузке фото: ")
+
+async def get_all_texts_recursive(msg) -> list:
+    """Рекурсивно собирает текст из самого сообщения, ответов и пересланных сообщений."""
+    texts = []
+    
+    # 1. Забираем текст текущего сообщения (если он есть)
+    if msg.text:
+        texts.append(msg.text.strip())
+
+    # 2. Проверяем ответ на сообщение (reply_message)
+    # В vkbottle это объект, а не список
+    if getattr(msg, "reply_message", None):
+        texts.extend(await get_all_texts_recursive(msg.reply_message))
+
+    # 3. Проверяем пересланные сообщения (fwd_messages)
+    # Это всегда список
+    if getattr(msg, "fwd_messages", None):
+        for fwd in msg.fwd_messages:
+            texts.extend(await get_all_texts_recursive(fwd))
+            
+    return texts
+
+async def get_all_photos_recursive(msg) -> list:
+    """Рекурсивно собирает URL всех фотографий из сообщения и пересылок."""
+    photo_urls = []
+
+    # 1. Ищем фото в текущем сообщении
+    if getattr(msg, "attachments", None):
+        for attachment in msg.attachments:
+            if attachment.photo:
+                # Берем последний элемент в списке sizes (самый большой)
+                max_size_url = attachment.photo.sizes[-1].url
+                photo_urls.append(max_size_url)
+
+    # 2. Идем в ответ (reply_message)
+    reply = getattr(msg, "reply_message", None)
+    if reply:
+        photo_urls.extend(await get_all_photos_recursive(reply))
+
+    # 3. Идем в пересланные сообщения (fwd_messages)
+    fwd_messages = getattr(msg, "fwd_messages", None)
+    if fwd_messages:
+        for fwd in fwd_messages:
+            photo_urls.extend(await get_all_photos_recursive(fwd))
+
+    return photo_urls
 
 @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, dataclass=MessageEvent)
 async def handle_keyboard_events(event: MessageEvent):
@@ -448,8 +645,7 @@ async def handle_keyboard_events(event: MessageEvent):
             await bot.state_dispenser.delete(peer_id=peer_id)
         else:
             is_create = True
-            await event.show_snackbar(f"""Заявка на привязку вашего чата к группе {name} на рассмотрение!
-                                       Пожалуйста подождите, администратор уже занят этим вопросом""")
+            await event.show_snackbar(f"Заявка на привязку вашего чата к группе {name} на рассмотрение!")
         
         admins = data.get_admins()
         for Id in admins:
@@ -510,60 +706,6 @@ async def handle_keyboard_events(event: MessageEvent):
         
         await bot.state_dispenser.delete(peer_id=pl_peer_id)
     
-    elif payload.get("act") == "!is_homework":
-        await bot.api.messages.delete(cmids=[event.conversation_message_id],
-                                      peer_id=peer_id,
-                                      delete_for_all=True)
-        await event.show_snackbar("Хорошо! Извините, за беспокойство!")
-    
-    elif payload.get("act") == "is_homework":
-        cmid = payload.get("cmid")
-        text = payload.get("text")
-
-        await bot.api.messages.edit(peer_id=event.peer_id,
-                                    cmid=event.conversation_message_id,
-                                    message="Groq проверяет...",
-                                    keyboard = "")
-        result = await get_groq_response(message=text,group_name=data.get_group_name(vk_id=peer_id))
-
-        if result != "None":
-            result = literal_eval(result.strip())
-            if len(result) != 3:
-                return
-            
-            subject_name = data.get_subject_name(subject_id=result[0])
-            await bot.api.messages.edit(peer_id=event.peer_id,
-                                    cmid=event.conversation_message_id,
-                                    message="Успешно!",
-                                    keyboard = "")
-            await asyncio.sleep(2)
-            await bot.api.messages.delete(peer_id=event.peer_id,
-                                    cmids=[event.conversation_message_id],
-                                    delete_for_all=True)
-            data.ensure_homework(vk_id=peer_id, subject_name=subject_name, description=f"{text}")
-
-            await event.show_snackbar(f"Дз по {subject_name} было успешно добавлено!")
-            await bot.api.messages.delete(peer_id=event.peer_id,
-                                    cmids=[cmid],
-                                    delete_for_all=True)
-        else:
-            await bot.api.messages.edit(peer_id=event.peer_id,
-                                    cmid=event.conversation_message_id,
-                                    message="Не опознано!",
-                                    keyboard = "")
-            await asyncio.sleep(2)
-            await bot.api.messages.edit(peer_id=event.peer_id,
-                                    cmid=event.conversation_message_id,
-                                    message="ДЗ не опознано, извините возможно неполадки! Я уже написал админу!",
-                                    keyboard = "")
-            for Id in data.get_admins():
-                vk_id = data.get_user_vk_id(Id)
-                await bot.api.messages.send(
-                    user_id=vk_id,
-                    message=f"Не получилось добавить дз '{text}' в группе {event.peer_id} пользователем {event.user_id}",
-                    random_id=randint(0,1000000)
-                )
-    
     elif payload.get("act") == "close":
         
         await bot.api.messages.delete(
@@ -586,29 +728,86 @@ async def handle_keyboard_events(event: MessageEvent):
 
         hw = data.get_homework(vk_id=peer_id, subject_name=subj_name)
         lines = [f"ДЗ по {subj_name}:"]
+        photos = []
         if hw is not None:
             for el in hw:
-                lines.append(f"-->{el[2]}")
+                if el[-2] in ([], None):
+                    lines.append(f"-->{el[2]}")
+                else:
+                    lines.append(f"-->{el[2]} (Вложение...)")
+                    photos.append(el[-2])
+                
         else:
             lines.append("--> Не задано :|")
         
         text = "\n".join(lines)
+        atts = []
 
-        await event.show_snackbar(text)
+        for collect in photos:
+            for name in collect:
+                file_path = ASSETS_DIR / name
+                try:
+                    att = await uploader.upload(str(file_path))
+                    atts.append(att)
+                except Exception:
+                    logger.exception("Ошибка при выгрузке фото: ")
+
+        keyboard = close_kb()
+        await bot.api.messages.send(peer_id=peer_id, message=text, silent=True, attachment=atts, random_id = randint(0,100000), keyboard=keyboard)
+
+    elif payload.get("act") == "del_hw":
+        subj_id = payload.get("subj_id")
+        subj_name = data.get_subject_name(subject_id=subj_id)
+        hw = data.get_homework(vk_id = peer_id, subject_name = subj_name)
+        if hw:
+            if len(hw) == 1:
+                hw_id = hw[0][0]
+                data.delete_homework(hw_id)
+                await bot.api.messages.edit(peer_id = peer_id, cmid = event.conversation_message_id,
+                                        message = f"Дз для {subj_name} удалено")
+                await asyncio.sleep(2)
+                await bot.api.messages.delete(cmids=[event.conversation_message_id], peer_id = peer_id,
+                                            delete_for_all=True)
+            elif len(hw) > 1:
+                kb = Keyboard(inline=True)
+                for row in hw:
+                    kb.add(
+                        Callback(f"{row[2][:9]}...", payload={"act":"del_hw_2", "hw_id":row[0]}),
+                        KeyboardButtonColor.PRIMARY
+                    )
+                    kb.row()
+                    await bot.api.messages.edit(peer_id = peer_id, cmid = event.conversation_message_id,
+                                        message = f"Выберите какое именно дз вы хотите удалить:", keyboard=kb)
+        else:
+            await bot.api.messages.edit(peer_id = peer_id, cmid = event.conversation_message_id,
+                                        message = "Для этого предмета дз не найдено!")
+            await asyncio.sleep(2)
+            await bot.api.messages.delete(cmids=[event.conversation_message_id], peer_id = peer_id,
+                                          delete_for_all=True)
+    elif payload.get("act") == "del_hw_2":
+        hw_id = payload.get("hw_id")
+        data.delete_homework(hw_id)
+        await bot.api.messages.edit(peer_id = peer_id, cmid = event.conversation_message_id,
+                                        message = f"Дз удалено")
+        await asyncio.sleep(2)
+        await bot.api.messages.delete(cmids=[event.conversation_message_id], peer_id = peer_id,
+                                    delete_for_all=True)
+
 
 async def check_parser() -> None:
     logger.info("Проверка парсера началась")
     sch_date = data.get_last_schedule_date()
+    filename = ASSETS_DIR / "last_date.pkl"
     
-    with open("last_date.json",'r',encoding="utf-8") as f:
-        file_data = json.load(f)
+    with open(filename,'rb') as f:
+        file_data = pickle.load(f)
     
     send_date = file_data.get("vk")
     
     if sch_date > send_date:
         file_data["vk"] = sch_date
-        with open("last_date.json",'w',encoding="utf-8") as f:
-            json.dump(file_data, f, indent=4)
+        with open(filename,'wb') as f:
+            pickle.dump(file_data, f)
         for name in data.get_group_names():
             schedule = data.get_schedule(group_name=name)
             vk_id = data.get_vk_id(group_name=name)
@@ -628,21 +827,36 @@ async def check_parser() -> None:
                 lines.append(f"({l})  {s}  [{r}]")
 
             lines.append("---------------------")
+            photos = []
 
             for subj in subjects:
                 hw = data.get_homework(vk_id=vk_id,subject_name=subj)
                 if hw is not None:
                     lines.append(f"[{subj}]")
                     for el in hw:
-                        lines.append(f"--> {el[2]}")
                         lessons_left = el[-1] - 1
                         if lessons_left <= 0:
                             data.delete_homework(el[0])
                         else:
                             data.set_lesson(el[0],lessons_left=lessons_left)
-            
+                        
+                        if el[-2] in ([], None):
+                            lines.append(f"-->{el[2]}")
+                        else:
+                            lines.append(f"-->{el[2]} (Вложение...)")
+                            photos.append(el[-2])
+                atts = []
 
-            lines.append("---------------------")
+                for collect in photos:
+                    for name in collect:
+                        file_path = ASSETS_DIR / name
+                        try:
+                            att = await uploader.upload(str(file_path))
+                            atts.append(att)
+                        except Exception:
+                            logger.exception("Ошибка при выгрузке фото: ")
+                
+            
 
             if min(ln) > "1":
                 lines.append(f"*@all ВНИМАНИЕ! Завтра к {min(ln)} паре")
@@ -653,7 +867,8 @@ async def check_parser() -> None:
             await bot.api.messages.send(
                 peer_id=vk_id,
                 random_id=randint(0,10000),
-                message=text
+                message=text,
+                attachment=atts
             )
 
 
