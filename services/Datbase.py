@@ -5,6 +5,8 @@ import datetime
 from datetime import timedelta
 import secrets
 import string
+from pathlib import Path
+from ast import literal_eval
 
 class DataBase:
     def __init__(self, path: str = "database.db"):
@@ -106,19 +108,19 @@ class DataBase:
             cur = conn.cursor()
 
             cur.execute("""
-                SELECT id, telegram_id, vk_id, group_id FROM users
+                SELECT id, telegram_id, vk_id, group_id, full_name FROM users
                 WHERE telegram_id = ? OR vk_id = ?
             """, (telegram_id, vk_id))
             row = cur.fetchone()
 
             if row:
-                user_id = row["id"]
+                user_id = None
 
                 if telegram_id and not row["telegram_id"]:
                     cur.execute("UPDATE users SET telegram_id = ? WHERE id = ?", (telegram_id, user_id))
                 if vk_id and not row["vk_id"]:
                     cur.execute("UPDATE users SET vk_id = ? WHERE id = ?", (vk_id, user_id))
-                if group_id is not None and not row["group_id"] is None:
+                if group_id is not None and row["group_id"] is None:
                     cur.execute("UPDATE users SET group_id = ? WHERE id = ?", (group_id, user_id))
                 if full_name is not None and not row["full_name"]:
                     cur.execute("UPDATE users SET full_name = ? WHERE id = ?", (full_name, user_id))
@@ -345,37 +347,35 @@ class DataBase:
                        telegram_id:Optional[int] = None,
                        vk_id:Optional[int] = None, 
                        group_id:Optional[int] = None,
-                       name: str = None,
-                       year: int = None) -> int:
+                       name: str = None) -> int:
         if telegram_id is None and vk_id is None and group_id is None:
             raise ValueError("Нужен хотя-бы вк или тг или id")
-        if name is None or year is None:
+        if name is None:
             raise ValueError("Наименование или Год не указаны")
         
         with self._connect() as conn:
             cur = conn.cursor()
             if group_id is None:
                 group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
+
             cur.execute("""SELECT id FROM subjects
                         WHERE group_id = ? 
-                        AND name = ?
-                        AND year = ?""",(group_id,name, year))
+                        AND name = ?""",(group_id,name))
             row = cur.fetchone()
             if row:
                 return row["id"]
             else:
-                raise ValueError("Subject is not founded")
+                return None
     
     def get_subject_name(self,
                          subject_id: Optional[int] = None,
                          telegram_id:Optional[int] = None,
                          vk_id:Optional[int] = None,
-                         name:str = None,
-                         year:int = None) -> str:
+                         name:str = None,) -> str:
         if telegram_id is None and vk_id is None and subject_id is None:
-            raise ValueError("Нужен хотя-бы вк или тг")
-        if (name is None or year is None) and subject_id is None:
-            raise ValueError("Наименование или Год не указаны")
+            raise ValueError("Нужен хотя-бы вк или тг или id")
+        if (name is None) and subject_id is None:
+            raise ValueError("Наименование и id не указаны")
         
         with self._connect() as conn:
             cur = conn.cursor()
@@ -387,7 +387,7 @@ class DataBase:
 
             else:
                 group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
-                cur.execute("SELECT name FROM subjects WHERE group_id = ? AND year = ? AND name = ?",(group_id,year,name))
+                cur.execute("SELECT name FROM subjects WHERE group_id = ? AND name = ?",(group_id,name))
                 row = cur.fetchone()
                 if row:
                     return row["name"]
@@ -549,33 +549,40 @@ class DataBase:
     #---------------------------------HOMEWORK------------------------------------------
 
     def ensure_homework(self,
-                        telegram_id:Optional[int] = None,
                         vk_id:Optional[int] = None,
-                        name:str = None,
-                        year:int = None,
-                        description:str = None,
-                        attachments:Optional[List[str]] = None,
-                        lessons_left:int = 1) -> None:
-        if telegram_id is None and vk_id is None:
-            raise ValueError("Нужен хотя-бы вк или тг")
-        if name is None or year is None:
-            raise ValueError("Один из параметров (наименование, год, описание или вложения) не указан")
-        
-        description = description or ""
-        attachments = attachments or []
-
-        if not description and not attachments:
-            raise ValueError("Нужно хотя-бы описание или вложения")
+                        telegram_id:Optional[int] = None,
+                        group_name:Optional[str] = None,
+                        subject_name:Optional[str] = None,
+                        description:Optional[str] = None,
+                        attachments:Optional[List] = None,
+                        lessons_left:Optional[int] = 1) -> None:
+        if all(el is None for el in (vk_id,telegram_id,group_name)):
+            raise ValueError("Укажите вк или тг или наименование предмета")
+        if all(el is None for el in (description,attachments)):
+            raise ValueError("Описание и вложение не указаны")
+        if subject_name is None:
+            raise ValueError("Название предмета не указако")
         
         with self._connect() as conn:
-            cur = conn.cursor()
-            group_id = self.get_group_id(telegram_id=telegram_id, vk_id=vk_id)
-            subject_id = self.get_subject_id(group_id=group_id,name=name,year=year)
-            attachments_json = json.dumps(attachments)
-            cur.execute("""
-            INSERT INTO homework (group_id,subject_id,description,attachments,lessons_left)
-            VALUES (?,?,?,?,?)
-            """,(group_id,subject_id,description,attachments_json,lessons_left))
+            group_id = self.get_group_id(telegram_id=telegram_id,vk_id=vk_id,
+                                         name=group_name)
+            description = description or ""
+
+            if attachments != None:
+                attachments = f"{attachments}"
+            else: 
+                attachments = ""
+
+            subject_id = self.get_subject_id(group_id=group_id,name=subject_name)
+            
+            conn.execute("""
+                INSERT INTO homework 
+                (group_id, subject_id, description, attachments, lessons_left)
+                VALUES (?,?,?,?,?)
+            """,(group_id,subject_id,description,attachments,lessons_left))
+
+            
+        
     
     def delete_homework(self, homework_id:Optional[int] = None) -> None:
         if homework_id is None:
@@ -585,19 +592,19 @@ class DataBase:
             conn.execute("DELETE FROM homework WHERE id = ?", (homework_id,))
     
     def get_homework(self,
-                     telegram_id:Optional[int] = None,
-                     vk_id: Optional[int] = None,
-                     name:Optional[str] = None,
-                     year:Optional[int] = None) -> List[Tuple[int,str,str,List[str],int]]:
-        if telegram_id is None and vk_id is None:
-            raise ValueError("Нужен хотя-бы вк или тг")
-        if name is None or year is None:
-            raise ValueError("Не указаны наименование или год")
+                     vk_id:Optional[int] = None,
+                        telegram_id:Optional[int] = None,
+                        group_name:Optional[str] = None,
+                        subject_name:Optional[str] = None,) -> List[Tuple[int,str,str,List[str],int]]:
+        if all(el is None for el in (vk_id,telegram_id,group_name)):
+            raise ValueError("Укажите вк или тг или наименование предмета")
+        if subject_name is None:
+            raise ValueError("Название предмета не указако")
         
         with self._connect() as conn:
             cur = conn.cursor()
-            group_id = self.get_group_id(telegram_id=telegram_id,vk_id=vk_id)
-            subject_id = self.get_subject_id(group_id=group_id,name=name,year=year)
+            group_id = self.get_group_id(telegram_id=telegram_id,vk_id=vk_id, name=group_name)
+            subject_id = self.get_subject_id(group_id=group_id,name=subject_name)
             cur.execute("""
             SELECT homework.id,subjects.name,homework.description,homework.attachments,homework.lessons_left
             FROM homework
@@ -606,16 +613,27 @@ class DataBase:
             """,(group_id,subject_id))
 
             rows = cur.fetchall()
-            return [
-                (
-                    row['id'],
-                    row['name'],
-                    row['description'],
-                    json.loads(row['attachments']) if row['attachments'] else [],
-                    row['lessons_left']
-                )
-                for row in rows
-            ]
+            if rows:
+                return [
+                    (
+                        row['id'],
+                        row['name'],
+                        row['description'],
+                        literal_eval(row['attachments']) if row['attachments'] else [],
+                        row['lessons_left']
+                    )
+                    for row in rows
+                ]
+            else:
+                return None
+        
+    def set_lesson(self, homework_id:Optional[int] = None,
+                    lessons_left:Optional[int] = None) -> None:
+        
+        with self._connect() as conn:
+            conn.execute("UPDATE homework SET lessons_left = ? WHERE id = ?",
+                         (lessons_left,homework_id))
+            
 
  #----------------------GROUP_LINK--------------------------
 

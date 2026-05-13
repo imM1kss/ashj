@@ -14,6 +14,7 @@ from services.Datbase import DataBase
 from typing import Optional, Dict, List
 from time import sleep
 from services.logging_config import setup_logging
+from pathlib import Path
 
 #logger init
 setup_logging()
@@ -25,6 +26,7 @@ load_dotenv()
 #const
 TOKEN = os.getenv('access_token')
 GROUP_ID = os.getenv('schedule_id')
+ASSETS_DIR = Path('assets')
 
 
 class VkGroup:
@@ -167,7 +169,7 @@ def download_file(link:Optional[str] = None) -> bool:
         return False
 
     #get file_name and file_path with schedule
-    filename = "schedule.docx"
+    filename = ASSETS_DIR / "schedule.docx"
     file_path = os.path.join(os.getcwd(), filename)
 
     #request to link
@@ -189,7 +191,7 @@ def download_file(link:Optional[str] = None) -> bool:
 
 #get schedule from schedule.docx
 def get_schedule() -> List:
-    doc = Document("schedule.docx")
+    doc = Document((ASSETS_DIR / "schedule.docx"))
     schedule = []
 
     if not doc.tables:
@@ -239,7 +241,7 @@ def clean(items:List) -> List:
 
 #delete all *.docx
 def remove_all_schedule() -> None:
-    for file_path in glob.glob(os.path.join(os.getcwd(), "*.docx")):
+    for file_path in glob.glob(os.path.join(os.getcwd() / ASSETS_DIR, "*.docx")):
         os.remove(file_path)
     logger.info("All .docx removed")
 
