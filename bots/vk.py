@@ -798,6 +798,12 @@ async def check_parser() -> None:
     logger.info("Проверка парсера началась")
     sch_date = data.get_last_schedule_date()
     filename = ASSETS_DIR / "last_date.pkl"
+
+    if not filename.exists():
+        file_data = {"vk":"2026-05-11"}
+        with open(filename,'wb') as f:
+            pickle.dump(file_data, f)
+
     
     with open(filename,'rb') as f:
         file_data = pickle.load(f)
