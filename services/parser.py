@@ -245,11 +245,7 @@ def remove_all_schedule() -> None:
         os.remove(file_path)
     logger.info("All .docx removed")
 
-def upload_data(data, tag, value):
-    logger.info("Upload %s to %s", tag, value)
-    data[tag] = value
-    with open("data.json", "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
+
 
 if __name__ == '__main__':
     while True:

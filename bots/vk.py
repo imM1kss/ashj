@@ -819,7 +819,7 @@ async def check_parser() -> None:
             vk_id = data.get_vk_id(group_name=name)
             now = datetime.strptime(sch_date, "%Y-%m-%d")
             days = ["ПОНЕДЕЛЬНИК", "ВТОРНИК", "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА", "СУББОТА", "ВОСКРЕСЕНЬЕ"]
-            date = f"{days[now.weekday()]} ({now.strftime("%d.%m")})"
+            date = f"{days[now.weekday()]} ({now.strftime('%d.%m')})"
             lines = [f"Расписание на {date}", "---------------------"]
             ln = []
             subjects = []
