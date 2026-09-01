@@ -4,7 +4,6 @@ import requests
 import glob
 import logging
 import re
-import json
 
 from docx import Document
 from vk_api import VkApi
@@ -52,22 +51,6 @@ class VkGroup:
 
         return wall
     
-    #get date of last .docx with schedule
-    def get_new_date(self) -> str:
-        wall = self._connect_wall() #connection wall
-
-        for post in wall.get("items", []): #iterate list with posts
-            for att in post.get("attachments", []): #iterate attachemsts in every post
-
-                att_type = att.get("type") # type of attachment
-
-                if att_type == "doc": # only document type
-
-                    att_title = att.get("doc", {}).get("title") #get title of document
-                    date = text2date(att_title) #converting title to date
-
-                    return date
-        return ""
     
     #get file name of .docx with schedule
     def get_file_name(self) -> str:
@@ -83,7 +66,17 @@ class VkGroup:
                     att_title = att.get("doc", {}).get("title") #get title of document
 
                     return att_title
-        return ""
+        return
+
+    def get_new_date(self) -> str:
+        att_title = self.get_file_name()
+
+        if att_title is None:
+            logger.info("att title in get new date func is None")
+            return
+        
+        date = text2date(att_title) #converting title to date
+        return date
 
 
     # get schedule document downliad link
@@ -91,6 +84,9 @@ class VkGroup:
         wall = self._connect_wall() #connecting wall
 
         file_name = self.get_file_name() #get file name
+        if file_name is None:
+            logger.info("file name in get link func is None")
+            return
 
         for post in wall.get("items", []): #iterate list with posts
             for att in post.get("attachments", []): # iterate attacments in every post
@@ -108,7 +104,7 @@ class VkGroup:
 
                         return att_url
         
-        return ""
+        return
 
 
 #main function
@@ -120,7 +116,6 @@ def run_parser() -> bool:
         group = VkGroup()
         #get dates
         last_date = data.get_last_schedule_date()
-        last_date = last_date or ""
         logger.info(f"Парсер получил последнюю дату: {last_date}")
         new_date = group.get_new_date()
         logger.info(f"Парсер получил новую дату: {new_date}")
@@ -156,7 +151,7 @@ def convert_group_name(group_name:Optional[str] = None) -> str:
 
 def text2date(text:Optional[str] = None) -> str:
     if text is None:
-        raise ValueError("Text is None")
+        return
     
     date_str = text.replace(".docx", "")
     dt = datetime.strptime(date_str, "%d.%m.%Y")
