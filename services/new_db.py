@@ -273,9 +273,10 @@ class UserRepository:
         academic_role:Optional[int] = AcademicRole.USER,
         admin_role:Optional[int] = AdminRole.NONE
     ) -> UserModel:
-        
         if (tg_id is None) and (vk_id is None) and (max_id is None):
             raise ValueError("Нужно указать хотя-бы одно из полей: tg_id, vk_id, max_id в user.ensure()")
+
+
 
 T = TypeVar('T')
         
@@ -288,62 +289,79 @@ class BaseRepository(Generic[T]):
         filters = [getattr(self.model, k) == v for k,v in kwargs.items() if v is not None]
         stmt = select(self.model).where(and_(*filters))
         result = await self.session.execute(stmt)
+
         return result.scalar_one_or_none()
 
     async def get_all_by(self, **kwargs) -> Sequence[T]:
         stmt = select(self.model)
         filters = [getattr(self.model,k) == v for k,v in kwargs.items() if v is not None]
+
         if not filters:
             return []
+        
         stmt.where(and_(*filters))
         result = await self.session.execute(stmt)
+
         return result.scalars().all()
 
     async def delete_by(self, **kwargs) -> bool:
         filters = [getattr(self.model,k) == v for k,v in kwargs.items() if v is not None]
+
         if not filters:
             return False
+        
         stmt = delete(self.model).where(and_(*filters))
         result = await self.session.execute(stmt)
         await self.session.commit()
+
         return result.rowcount > 0
 
     async def add(self, **kwargs) -> T:
         obj = self.model(**kwargs)
         self.session.add(obj)
         await self.session.commit()
+
         return obj
 
     async def update_by(self, filters:dict, values:dict) -> int:
         filters_stand = [getattr(self.model, k) == v for k,v in filters.items() if v is not None]
+
         if not filters_stand:
             return 0
+        
+        stmt = self.session.update(self.model).where(and_(*filters_stand)).values(**values)
+
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+
+        return result.rowcount
+    
 
     
 
-class GroupRepository:
+class GroupRepository(BaseRepository[GroupModel]):
     def __init__(self, session: AsyncSession):
-        self.session = session
+        super().__init__(GroupModel, session)
 
 
-class SubjectRepository:
+class SubjectRepository(BaseRepository[SubjectModel]):
     def __init__(self, session: AsyncSession):
-        self.session = session
+        super().__init__(SubjectModel, session)
 
 
-class ScheduleRepository:
+class ScheduleRepository(BaseRepository[ScheduleModel]):
     def __init__(self, session: AsyncSession):
-        self.session = session
+        super().__init__(ScheduleModel, session)
 
 
-class GradeRepository:
+class GradeRepository(BaseRepository[GradeModel]):
     def __init__(self, session: AsyncSession):
-        self.session = session
+        super().__init__(GradeModel, session)
 
 
-class HomeworkRepository:
+class HomeworkRepository(BaseRepository[HomeworkModel]):
     def __init__(self, session: AsyncSession):
-        self.session = session
+        super().__init__(HomeworkModel, session)
 
 
 class Database:
