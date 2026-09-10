@@ -257,26 +257,31 @@ class HomeworkModel(BaseModel):
         nullable=False
     )
 
+class ArchiveHomeworkModel(BaseModel):
+    __tablename__ = "archive_homework"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True
+    )
+    schedule_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "schedule.id",
+            ondelete="CASCADE"
+        )
+    )
+    task: Mapped[str] = mapped_column(
+            unique=False,
+            nullable=False
+    )
+    attachment: Mapped[list[str]] = mapped_column(
+        ARRAY(String),
+        default=list,
+        nullable=False
+    )
+
 
 #----------REPOS-----------
-
-class UserRepository:
-    def __init__(self, session: AsyncSession):
-        self.session = session
-
-    async def ensure(self,
-        group_id:Optional[int] = None,
-        full_name:Optional[str] = None,
-        tg_id:Optional[int] = None,
-        vk_id:Optional[int] = None,
-        max_id:Optional[int] = None,
-        academic_role:Optional[int] = AcademicRole.USER,
-        admin_role:Optional[int] = AdminRole.NONE
-    ) -> UserModel:
-        if (tg_id is None) and (vk_id is None) and (max_id is None):
-            raise ValueError("Нужно указать хотя-бы одно из полей: tg_id, vk_id, max_id в user.ensure()")
-
-
 
 T = TypeVar('T')
         
@@ -337,11 +342,69 @@ class BaseRepository(Generic[T]):
         return result.rowcount
     
 
-    
+class UserRepository(BaseRepository[UserModel]):
+    def __init__(self, session: AsyncSession):
+        super().__init__(UserModel, session)
+
+    async def ensure(self,
+        group_id:int | None = None,
+        full_name:str | None = None,
+        tg_id:int | None = None,
+        vk_id:int | None = None,
+        max_id:int | None = None,
+        academic_role:int | None = None,
+        admin_role:int | None = None
+    ) -> UserModel:
+        
+        if not any((tg_id,vk_id,max_id))
+            raise ValueError("Нужно указать хотя-бы одно из полей: tg_id, vk_id, max_id")
+
+        search_ids = {k:v for k,v in {"tg_id":tg_id, "vk_id":vk_id, "max_id":max_id}.items() if v is not None}
+
+        user = await self.get_by(**search_ids)
+
+        if user:
+            if not user.group_id and group_id:
+                user.group_id = group_id
+
+            if not user.full_name and full_name:
+                user.full_name = full_name
+
+            if not user.tg_id and tg_id:
+                user.tg_id = tg_id
+
+            if not user.vk_id and vk_id:
+                user.vk_id = vk_id
+
+            if not user.max_id and max_id:
+                user.max_id = max_id
+
+            if not user.academic_role and academic_role:
+                user.academic_role = academic_role
+
+            if not admin_role and admin_role:
+                user.admin_role = admin_role
+
+            await self.session.commit()
+            return user
+
+        params = locals()
+        params.pop("self")
+        params_clean = {k:v for k,v in params.items() if v is not None}
+
+        return await self.add(**params_clean)
+
+        
+        
+
+        
+
+        
 
 class GroupRepository(BaseRepository[GroupModel]):
     def __init__(self, session: AsyncSession):
         super().__init__(GroupModel, session)
+
 
 
 class SubjectRepository(BaseRepository[SubjectModel]):
@@ -364,13 +427,19 @@ class HomeworkRepository(BaseRepository[HomeworkModel]):
         super().__init__(HomeworkModel, session)
 
 
+class ArchiveRepository(BaseRepository[ArchiveHomeworkModel]):
+    def __init__(self, model, session):
+        super().__init__(model, session)
+
+
 class Database:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-        self.user = UserRepository(session=self.session)
-        self.group = GroupRepository(session=self.session)
-        self.subject = SubjectRepository(session=self.session)
+        self.users = UserRepository(session=self.session)
+        self.groups = GroupRepository(session=self.session)
+        self.subjects = SubjectRepository(session=self.session)
         self.schedule = ScheduleRepository(session=self.session)
-        self.grade = GradeRepository(session=self.session)
+        self.grades = GradeRepository(session=self.session)
         self.homework = HomeworkRepository(session=self.session)
+        self.archive_homework = ArchiveRepository(session=self.session)

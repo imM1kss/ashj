@@ -53,7 +53,7 @@ class VkGroup:
     
     
     #get file name of .docx with schedule
-    def get_file_name(self) -> str:
+    def get_file_name(self) -> List[str] | List:
         wall = self._connect_wall() #connecting wall
 
         for post in wall.get("items", []): #iterate list with posts
@@ -66,14 +66,12 @@ class VkGroup:
                     att_title = att.get("doc", {}).get("title") #get title of document
 
                     return att_title
-        return
+
+        return 
 
     def get_new_date(self) -> str:
         att_title = self.get_file_name()
 
-        if att_title is None:
-            logger.info("att title in get new date func is None")
-            return
         
         date = text2date(att_title) #converting title to date
         return date
