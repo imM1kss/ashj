@@ -245,7 +245,7 @@ if __name__ == '__main__':
         try:
             result = run_parser()
             logger.info(f"Парсер выполнил свою работу и пошел спать! Результат - {result}")
-            sleep(600)
+            sleep(60)
         except KeyboardInterrupt:
             logger.info("Парсер выключен!")
             break
