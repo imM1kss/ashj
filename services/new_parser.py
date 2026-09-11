@@ -24,7 +24,8 @@ GROUP_ID = getenv("schedule_id")
 GATEWAY_API = getenv("API_GATEWAY")
 
 #vk api
-api = API(token=TOKEN, api_url=GATEWAY_API)
+api = API(token=TOKEN)
+api.API_URL = GATEWAY_API
 
 #cache service
 class WallCache:
