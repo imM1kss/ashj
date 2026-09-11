@@ -21,9 +21,10 @@ log = getLogger("parser")
 #const
 TOKEN = getenv("access_token")
 GROUP_ID = getenv("schedule_id")
+GATEWAY_API = getenv("API_GATEWAY")
 
 #vk api
-api = API(TOKEN)
+api = API(token=TOKEN, api_url=GATEWAY_API)
 
 #cache service
 class WallCache:
