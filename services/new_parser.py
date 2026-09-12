@@ -29,7 +29,7 @@ api.API_URL = GATEWAY_API
 
 #cache service
 class WallCache:
-    def __init__(self, api: API,ttl: int = 60):
+    def __init__(self, api: API,ttl: int = 100):
         self.api = api
         self.ttl = ttl
 
@@ -39,7 +39,7 @@ class WallCache:
 
     async def get_posts(
             self,
-            count: int = 10,
+            count: int = 5,
             force_refresh: bool = False
     ) -> List[WallWallpostFull]:
         # current time 
@@ -87,7 +87,7 @@ async def run_parser():
         except Exception:
             log.exception("Exception: ")
 
-        await asyncio.sleep(60)
+        await asyncio.sleep(100)
 
 if __name__ == "__main__":
     try:

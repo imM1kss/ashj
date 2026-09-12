@@ -4,12 +4,13 @@ import asyncpg
 from sqlalchemy import select, update, delete, or_, and_
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import BigInteger, SmallInteger, Date, func, CheckConstraint, Sequence, ForeignKey, UniqueConstraint, ARRAY, String
+from sqlalchemy import BigInteger, SmallInteger, Date, func, CheckConstraint, Sequence, ForeignKey, UniqueConstraint, ARRAY, String, TypeDecorator
 from dotenv import load_dotenv
 from os import getenv
 from enum import IntEnum
 from datetime import date
-from typing import Optional, List, TypeVar, Generic, Sequence
+from typing import List, TypeVar, Generic, Sequence
+from cryptography.fernet import Fernet
 
 load_dotenv()
 
@@ -19,6 +20,27 @@ engine = create_async_engine(DB_URL, echo=True)
 
 
 async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+SECRET_KEY = getenv("DB_ENC_KEY").encode()
+cipher = Fernet(SECRET_KEY)
+
+#----------Encryption-------------
+
+class EncryptedString(TypeDecorator):
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            enc_bytes = cipher.encrypt(value.encode("utf-8"))
+            return enc_bytes.decode("utf-8")
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            dec_bytes = cipher.decrypt(value.encode("utf-8"))
+            return dec_bytes.decode("utf-8")
+        return value
 
 #-----------------TABLES--------------------
 
@@ -63,11 +85,6 @@ class UserModel(BaseModel):
         unique=True,
         nullable=True
     )
-    max_id: Mapped[int] = mapped_column(
-        BigInteger,
-        unique= True,
-        nullable=True
-    )
     academic_role: Mapped[int] = mapped_column(
         SmallInteger,
         CheckConstraint(
@@ -91,8 +108,8 @@ class UserModel(BaseModel):
 
     __table_args__ = (
         CheckConstraint(
-            "tg_id IS NOT NULL OR vk_id IS NOT NULL OR max_id IS NOT NULL",
-            name="check_user_tg_vk_max"
+            "tg_id IS NOT NULL OR vk_id IS NOT NULL",
+            name="check_user_tg_vk"
         )
     )
 
@@ -117,16 +134,11 @@ class GroupModel(BaseModel):
         unique=True,
         nullable=True
     )
-    max_id: Mapped[int] = mapped_column(
-        BigInteger,
-        unique=True,
-        nullable=True
-    )
 
     __table_args__ = (
         CheckConstraint(
-            "tg_id IS NOT NULL OR vk_id IS NOT NULL OR max_id IS NOT NULL",
-            name="check_group_tg_vk_max"
+            "tg_id IS NOT NULL OR vk_id IS NOT NULL",
+            name="check_group_tg_vk"
         )
     )
 
@@ -248,11 +260,12 @@ class HomeworkModel(BaseModel):
         nullable=False
     )
     task: Mapped[str] = mapped_column(
+        EncryptedString,
         unique=False,
         nullable=False
     )
     attachment: Mapped[list[str]] = mapped_column(
-        ARRAY(String),
+        ARRAY(EncryptedString),
         default=list,
         nullable=False
     )
@@ -271,11 +284,12 @@ class ArchiveHomeworkModel(BaseModel):
         )
     )
     task: Mapped[str] = mapped_column(
-            unique=False,
-            nullable=False
+        EncryptedString,
+        unique=False,
+        nullable=False
     )
     attachment: Mapped[list[str]] = mapped_column(
-        ARRAY(String),
+        ARRAY(EncryptedString),
         default=list,
         nullable=False
     )
@@ -351,15 +365,14 @@ class UserRepository(BaseRepository[UserModel]):
         full_name:str | None = None,
         tg_id:int | None = None,
         vk_id:int | None = None,
-        max_id:int | None = None,
         academic_role:int | None = None,
         admin_role:int | None = None
     ) -> UserModel:
         
-        if not any((tg_id,vk_id,max_id))
-            raise ValueError("Нужно указать хотя-бы одно из полей: tg_id, vk_id, max_id")
+        if not any((tg_id,vk_id)):
+            raise ValueError("Нужно указать хотя-бы одно из полей: tg_id, vk_id")
 
-        search_ids = {k:v for k,v in {"tg_id":tg_id, "vk_id":vk_id, "max_id":max_id}.items() if v is not None}
+        search_ids = {k:v for k,v in {"tg_id":tg_id, "vk_id":vk_id}.items() if v is not None}
 
         user = await self.get_by(**search_ids)
 
@@ -376,9 +389,6 @@ class UserRepository(BaseRepository[UserModel]):
             if not user.vk_id and vk_id:
                 user.vk_id = vk_id
 
-            if not user.max_id and max_id:
-                user.max_id = max_id
-
             if not user.academic_role and academic_role:
                 user.academic_role = academic_role
 
@@ -393,6 +403,7 @@ class UserRepository(BaseRepository[UserModel]):
         params_clean = {k:v for k,v in params.items() if v is not None}
 
         return await self.add(**params_clean)
+    
 
         
         
@@ -404,6 +415,8 @@ class UserRepository(BaseRepository[UserModel]):
 class GroupRepository(BaseRepository[GroupModel]):
     def __init__(self, session: AsyncSession):
         super().__init__(GroupModel, session)
+
+    
 
 
 
